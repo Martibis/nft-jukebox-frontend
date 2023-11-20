@@ -1,0 +1,55 @@
+@import url("https://use.typekit.net/tbd6qyb.css");
+
+$primaryFont: "gabriella",
+sans-serif;
+$secondaryFont: "mr-eaves-sans",
+sans-serif;
+
+
+:root {
+    --primaryColor-light: #ffffff;
+    --secondaryColor-light: #000000;
+    --tertiaryColor-dark: #131313;
+    --primaryColor-dark: #131313;
+    --secondaryColor-dark: #f6f6f6;
+    --tertiaryColor-dark: #D3D3D3;
+    --overlayColor-light: rgb(245, 245, 245);
+    --overlayColor-dark: #202020;
+    --borderColor-light: #4D4D4D;
+    --borderColor-dark: #4D4D4D;
+    --fade-start-color-light: rgba(255, 255, 255, 1);
+    --fade-end-color-light: rgba(255, 255, 255, 0);
+    --fade-start-color-dark: rgba(0, 0, 0, 1);
+    --fade-end-color-dark: rgba(0, 0, 0, 0);
+    --semi-transparent-bg-light: rgba(255, 255, 255, 0.9);
+    --semi-transparent-bg-dark: rgba(12, 12, 12, 0.9)
+}
+
+$disabledButtonColor: rgb(138, 138, 138);
+
+$shadowOne: 0rem 0rem 1.5rem rgba(0, 0, 0, 0.4);
+
+$mainHeaderFontSize: 8.5rem;
+$titleFontSize: 2.4rem;
+$paragraphFontSize: 1rem;
+
+$bigButtonFontSize: 1.5rem;
+$smallButtonFontSize: 0.8rem;
+
+$rotatedTitlesFontSize: 1.2rem;
+
+$subtitleFontSize: 2.1rem;
+
+$maxWidth: 1200px;
+$smallContainerMaxWidth: 350px;
+$mobileContainerMaxWidth: 450px;
+$sidePadding: 3rem;
+$rowGap: 4.5rem;
+
+$mainMenuHeight: 5.5rem;
+
+$defaultBorderRadius: 2px;
+$defaulButtonBorder: 2px;
+
+$statusGreen: #9FDE9F;
+$statusOrange: #FFE874;
