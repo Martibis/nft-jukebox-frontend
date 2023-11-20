@@ -24,7 +24,7 @@ const JukeBoxInterface = () => {
         } else {
             console.log(tokenURI);
             const processedURI = processIpfsUri(tokenURI);
-            const response = await fetch(processedURI);
+            const response = await fetch('https://corsproxy.io/?' + processedURI);
             metadata = await response.json();
         }
 
@@ -52,11 +52,11 @@ const JukeBoxInterface = () => {
             setIsBase64Content(true);
         } else {
             try {
-                const response = await fetch(processedURI, { method: 'HEAD' });
+                const response = await fetch('https://corsproxy.io/?' + processedURI, { method: 'HEAD' });
                 if (response.ok) {
                     const mimeType = response.headers.get('Content-Type');
                     setContentType(mimeType);
-                    setContentURL(processedURI);
+                    setContentURL('https://corsproxy.io/?' + processedURI);
                     setIsBase64Content(false);
                 } else {
                     console.error('Error fetching content type:', response.statusText);
