@@ -93,7 +93,16 @@ const JukeBoxInterface = () => {
     };
 
     useEffect(() => {
-        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        let provider;
+
+        if (typeof window.ethereum !== 'undefined') {
+            // If window.ethereum is available, use Web3Provider
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+        } else {
+            // If window.ethereum is not available, use Infura
+            provider = new ethers.providers.JsonRpcProvider('https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c');
+        }
+
         const contract = new ethers.Contract(contractAddress, JukeBoxTokenABI, provider);
 
         contract.on('NFTPlayed', async () => {
