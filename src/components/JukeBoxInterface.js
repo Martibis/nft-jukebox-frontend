@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ethers } from 'ethers';
 import JukeBoxTokenABI from '../data/JukeBoxToken.json';
+import NftABI from '../data/Nft.json';
 import DOMPurify from 'dompurify';
 
 const JukeBoxInterface = () => {
@@ -8,14 +9,57 @@ const JukeBoxInterface = () => {
     const [contentURL, setContentURL] = useState('');
     const [contentType, setContentType] = useState('');
     const [isBase64Content, setIsBase64Content] = useState(false);
+    const [name, setName] = useState('');
+    const [nftContract, setNftContract] = useState('');
+    const [player, setPlayer] = useState('');
+    const [owner, setOwner] = useState('');
+    const [startBlock, setStartBlock] = useState(0);
+    const [currentBlock, setCurrentBlock] = useState(0);
+    const [tokenId, setTokenId] = useState(0);
 
     function isBase64(str) {
         const base64Regex = /^data:(.*?);base64,(.*)$/;
         return base64Regex.test(str);
     }
 
+    const increaseCurrentBlock = () => {
+        setCurrentBlock((prevBlock) => prevBlock + 1);
+    };
+
     const fetchNowPlaying = async (contract) => {
+        let provider;
+
+        if (typeof window.ethereum !== 'undefined') {
+            // If window.ethereum is available, use Web3Provider
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+        } else {
+            // If window.ethereum is not available, use Infura
+            provider = new ethers.providers.JsonRpcProvider('https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c');
+        }
+
         const tokenURI = await contract.nowPlaying();
+        const nftContract = await contract.nftContract();
+        const tokenId = await contract.tokenId();
+        const startBlock = await contract.startBlock();
+        let currentBlock = await provider.getBlockNumber();
+        console.log(currentBlock);
+        setCurrentBlock(currentBlock);
+        setStartBlock(startBlock);
+        setNftContract(nftContract);
+        setTokenId(tokenId);
+
+
+        const nftContractConnected = new ethers.Contract(nftContract, NftABI, provider);
+
+        let owner = await nftContractConnected.ownerOf(tokenId);
+
+        let potentialEns = await provider.lookupAddress(owner);
+        if (potentialEns) {
+            setOwner(potentialEns);
+        } else {
+            setOwner(owner);
+        }
+
         let metadata;
 
         if (isBase64(tokenURI)) {
@@ -27,6 +71,11 @@ const JukeBoxInterface = () => {
             const response = await fetch('https://corsproxy.io/?' + processedURI);
             metadata = await response.json();
         }
+        console.log(metadata)
+
+        if (metadata.name) {
+            setName(metadata.name);
+        }
 
         if (metadata.animation_url) {
             processContent(metadata.animation_url);
@@ -36,6 +85,27 @@ const JukeBoxInterface = () => {
             setIsBase64Content(true);
         } else if (metadata.image) {
             processContent(metadata.image);
+        }
+    };
+
+    const fetchPlayer = async (contract) => {
+        let provider;
+
+        if (typeof window.ethereum !== 'undefined') {
+            // If window.ethereum is available, use Web3Provider
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+        } else {
+            // If window.ethereum is not available, use Infura
+            provider = new ethers.providers.JsonRpcProvider('https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c');
+        }
+        const player = await contract.player();
+
+        let potentialEns = await provider.lookupAddress(player);
+
+        if (potentialEns) {
+            setPlayer(potentialEns);
+        } else {
+            setPlayer(player);
         }
     };
 
@@ -107,17 +177,39 @@ const JukeBoxInterface = () => {
 
         contract.on('NFTPlayed', async () => {
             await fetchNowPlaying(contract);
+            await fetchPlayer(contract);
         });
 
         fetchNowPlaying(contract);
+        fetchPlayer(contract);
 
         return () => {
             contract.removeAllListeners('NFTPlayed');
         };
     }, []);
 
+    useEffect(() => {
+        // ... your existing code ...
+
+        // Start an interval to increase currentBlock every 12 seconds
+        const intervalId = setInterval(increaseCurrentBlock, 12000);
+
+        // Cleanup function to clear the interval when the component unmounts
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
     return (
         <div className='nft-renderer'>
+            {contentURL && contentType ? (
+                <div className='all-info'>
+                    <p className='info'><a href={'https://opensea.io/assets/ethereum/' + nftContract + '/' + tokenId.toString()} target='_blank' rel="noreferrer">{name}</a>&nbsp;is played by&nbsp; <a href={'https://etherscan.io/address/' + player} target='_blank' rel="noreferrer">{player}</a>&nbsp; who has been earning {120 * (currentBlock - startBlock)} &nbsp;<a href="https://etherscan.io/address/0x89f22a95def3b0fb274337b4226153e003a72ab5" target='_blank' rel="noreferrer">$JUKE</a></p>
+                    {/* <p className='info'>Played by {player} who has been earning {120 * (currentBlock - startBlock)} $JUKE</p> */}
+                </div>
+            ) : (
+                <></>
+            )}
             {contentURL && contentType ? (
                 renderContent()
             ) : (

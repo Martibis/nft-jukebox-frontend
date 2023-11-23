@@ -7,19 +7,22 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: space-evenly;
+    justify-content: space-between;
     box-sizing: border-box;
-    padding: 2rem;
-    row-gap: 2rem;
+    padding: 1.5rem;
+    row-gap: 1.5rem;
 
     .header {
         width: 100%;
-        height: 5vh;
+        height: 2.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
 
         h1 {
             width: 100%;
             text-align: center;
-            font-size: 2rem;
+            font-size: 1.75rem;
             box-sizing: border-box;
             margin: 0;
         }
@@ -37,13 +40,14 @@
     .nft-renderer {
         /* Takes up all available space */
         display: flex;
+        flex-direction: column;
         /* To center the image inside */
         align-items: center;
         /* Vertical center */
         justify-content: center;
         /* Horizontal center */
         width: 100%;
-        height: 72vh;
+        height: calc(100vh - 6rem);
 
         iframe {
             width: 100%;
@@ -67,9 +71,26 @@
             align-items: center;
             justify-content: center;
         }
+
+        .all-info {
+            box-sizing: border-box;
+            padding-bottom: 1.5rem;
+        }
+
+        .info {
+            box-sizing: border-box;
+            line-height: 1.75;
+            font-size: 1.1rem;
+
+
+            a {
+                font-weight: bold;
+                text-decoration: underline;
+            }
+        }
     }
 
     .play-button {
-        height: 5vh;
+        height: 2.5rem;
     }
 }
