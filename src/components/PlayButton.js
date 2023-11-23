@@ -72,7 +72,7 @@ const PlayButton = () => {
                 metamask.chain === 1 ||
                 metamask.chain?.chainId === 1)) && metamask.accounts.length > 0) ?
                 <Popup lockScroll={true} modal={true} trigger={<div className={'play-button'}>
-                    <p>{`Show off an NFT and earn $JUKE for as long as it stays up`}</p>
+                    <p>{`Show off any NFT and earn $JUKE for as long as it stays up`}</p>
                 </div>}>
                     {() => (
                         <div className='nft-player'>
