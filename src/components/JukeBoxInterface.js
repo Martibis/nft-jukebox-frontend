@@ -213,7 +213,7 @@ const JukeBoxInterface = () => {
             {contentURL && contentType ? (
                 renderContent()
             ) : (
-                <p className='loader'>Loading NFT...</p>
+                <p className='loader'>Loading latest jukebox NFT...</p>
             )}
         </div>
 

@@ -350,7 +350,7 @@ textarea {
     text-align: center;
     text-underline-offset: 0.5rem;
     color: var(--secondaryColor);
-    text-transform: uppercase;
+    // text-transform: uppercase;
   }
 
   a:hover {
@@ -1016,7 +1016,7 @@ textarea {
   font-weight: 500;
   font-size: 0.65rem;
   padding: 0.4rem 1.2rem;
-  text-transform: uppercase;
+  // text-transform: uppercase;
   border-radius: $defaultBorderRadius;
 }
 

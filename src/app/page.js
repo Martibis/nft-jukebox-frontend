@@ -7,9 +7,9 @@ const Home = () => {
 
     return (
         <div id="home-page">
-            <div className='header'>
+            {/* <div className='header'>
                 <h1>Welcome to the $JUKEBOX</h1>
-            </div>
+            </div> */}
             <JukeBoxInterface />
             <PlayButton />
         </div>
