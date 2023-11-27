@@ -6,7 +6,7 @@ import { ethers } from 'ethers';
 import JukeBoxTokenABI from '../data/JukeBoxToken.json'; // Adjust the path as necessary
 
 const PlayButton = () => {
-    const contractAddress = '0x89f22a95def3B0fb274337b4226153E003A72aB5';
+    const contractAddress = '0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4';
     const metamask = useMetamask();
     const [nftContract, setNftContract] = useState('');
     const [tokenId, setTokenId] = useState('');

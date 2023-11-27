@@ -5,7 +5,7 @@ import NftABI from '../data/Nft.json';
 import DOMPurify from 'dompurify';
 
 const JukeBoxInterface = () => {
-    const contractAddress = '0x89f22a95def3B0fb274337b4226153E003A72aB5';
+    const contractAddress = '0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4';
     const [contentURL, setContentURL] = useState('');
     const [contentType, setContentType] = useState('');
     const [isBase64Content, setIsBase64Content] = useState(false);
