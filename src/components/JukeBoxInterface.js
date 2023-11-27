@@ -17,6 +17,11 @@ const JukeBoxInterface = () => {
     const [currentBlock, setCurrentBlock] = useState(0);
     const [tokenId, setTokenId] = useState(0);
 
+    function isData(str) {
+        const dataRegex = /^data:(.*)$/;
+        return dataRegex.test(str);
+    }
+
     function isBase64(str) {
         const base64Regex = /^data:(.*?);base64,(.*)$/;
         return base64Regex.test(str);
@@ -62,13 +67,17 @@ const JukeBoxInterface = () => {
 
         let metadata;
 
-        if (isBase64(tokenURI)) {
-            const decoded = atob(tokenURI.split(',')[1]);
+        if (isData(tokenURI)) {
+            const commaIndex = tokenURI.indexOf(',');
+            const afterComma = tokenURI.substring(commaIndex + 1);
+
+            const decoded = isBase64(tokenURI) ? atob(afterComma) : afterComma;
+
             metadata = JSON.parse(decoded);
         } else {
             console.log(tokenURI);
             const processedURI = processIpfsUri(tokenURI);
-            const response = await fetch('https://corsproxy.io/?' + encodeURIComponent(processedURI));
+            const response = await fetch(processedURI);
             metadata = await response.json();
         }
         console.log(metadata)
@@ -80,9 +89,7 @@ const JukeBoxInterface = () => {
         if (metadata.animation_url) {
             processContent(metadata.animation_url);
         } else if (metadata.image_data) {
-            setContentURL(`data:image/svg+xml;base64,${metadata.image_data}`);
-            setContentType('image/svg+xml');
-            setIsBase64Content(true);
+            processContent(metadata.image_data);
         } else if (metadata.image) {
             processContent(metadata.image);
         }
@@ -110,23 +117,26 @@ const JukeBoxInterface = () => {
     };
 
     const processContent = async (uri) => {
-        let processedURI = uri;
-        if (!isBase64(uri)) {
-            processedURI = processIpfsUri(uri);
-        }
+        if (isData(uri)) {
+            const mimeType = uri.match(/^data:(.*?);(.*?),/)[1];
 
-        if (isBase64(uri)) {
-            const mimeType = uri.match(/^data:(.*?);base64,/)[1];
+            const commaIndex = uri.indexOf(',');
+            const beforeComma = uri.substring(0, commaIndex);
+            const afterComma = uri.substring(commaIndex + 1);
+
+            const decoded = isBase64(uri) ? uri : (beforeComma + "," + encodeURIComponent(afterComma));
+
+            setContentURL(decoded);
             setContentType(mimeType);
-            setContentURL(uri);
-            setIsBase64Content(true);
+
         } else {
+            let processedURI = processIpfsUri(uri);
             try {
-                const response = await fetch('https://corsproxy.io/?' + encodeURIComponent(processedURI), { method: 'HEAD' });
+                const response = await fetch(processedURI, { method: 'HEAD' });
                 if (response.ok) {
                     const mimeType = response.headers.get('Content-Type');
                     setContentType(mimeType);
-                    setContentURL('https://corsproxy.io/?' + encodeURIComponent(processedURI));
+                    setContentURL(processedURI);
                     setIsBase64Content(false);
                 } else {
                     console.error('Error fetching content type:', response.statusText);
@@ -140,8 +150,9 @@ const JukeBoxInterface = () => {
     const processIpfsUri = (uri) => {
         if (uri.startsWith('ipfs://')) {
             return uri.replace('ipfs://', 'https://ipfs.io/ipfs/');
+        } else {
+            return "https://corsproxy.io/?" + encodeURIComponent(uri);
         }
-        return uri;
     };
 
     const renderContent = () => {
@@ -204,7 +215,7 @@ const JukeBoxInterface = () => {
         <div className='nft-renderer'>
             {contentURL && contentType ? (
                 <div className='all-info'>
-                    <p className='info'><a href={'https://opensea.io/assets/ethereum/' + nftContract + '/' + tokenId.toString()} target='_blank' rel="noreferrer">{name}</a>&nbsp;is played by&nbsp; <a href={'https://etherscan.io/address/' + player} target='_blank' rel="noreferrer">{player}</a>&nbsp; who has been earning {120 * (currentBlock - startBlock)} &nbsp;<a href="https://etherscan.io/address/0x89f22a95def3b0fb274337b4226153e003a72ab5" target='_blank' rel="noreferrer">$JUKE</a></p>
+                    <p className='info'><a href={'https://opensea.io/assets/ethereum/' + nftContract + '/' + tokenId.toString()} target='_blank' rel="noreferrer">{name}</a>&nbsp;is played by&nbsp; <a href={'https://etherscan.io/address/' + player} target='_blank' rel="noreferrer">{player}</a>&nbsp; who has been earning {120 * (currentBlock - startBlock)} &nbsp;<a href="https://etherscan.io/address/0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4" target='_blank' rel="noreferrer">$JUKE</a></p>
                     {/* <p className='info'>Played by {player} who has been earning {120 * (currentBlock - startBlock)} $JUKE</p> */}
                 </div>
             ) : (
