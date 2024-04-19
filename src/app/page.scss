@@ -2,17 +2,19 @@
 
 
 #home-page {
-    height: 100%;
-    position: relative;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    padding: 1.5rem;
-    row-gap: 1.5rem;
-    position: relative;
+    .above-fold {
+        height: 100%;
+        position: relative;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        padding: 1.5rem;
+        row-gap: 1.5rem;
+        position: relative;
+    }
 
 
     .nft-renderer {

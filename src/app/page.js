@@ -7,11 +7,10 @@ const Home = () => {
 
     return (
         <div id="home-page">
-            {/* <div className='header'>
-                <h1>Welcome to the $JUKEBOX</h1>
-            </div> */}
-            <JukeBoxInterface />
-            <PlayButton />
+            <div className='above-fold'>
+                <JukeBoxInterface />
+                <PlayButton />
+            </div>
         </div>
     )
 }
