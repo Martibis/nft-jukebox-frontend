@@ -328,29 +328,23 @@ textarea {
 .connect-button {
   box-sizing: border-box;
   padding: 0.75rem 1.25rem;
-  //border: 2px solid white;
-  opacity: 0.9;
-  //align-self: flex-start;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   user-select: none;
-  // background-color: var(--secondaryColor);
-  border-radius: $defaultBorderRadius;
-
-  border: $defaulButtonBorder solid var(--borderColor);
-  user-select: none;
-  max-width: 600px;
+  border-radius: 8px;
+  border: 1px solid var(--borderColor);
+  background-color: transparent;
+  transition: background-color 0.2s, border-color 0.2s, opacity 0.2s;
 
   p,
   a {
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 500;
     text-align: center;
     text-underline-offset: 0.5rem;
     color: var(--secondaryColor);
-    // text-transform: uppercase;
   }
 
   a:hover {
@@ -413,7 +407,7 @@ textarea {
 
 .play-button:not(.disabled):hover,
 .connect-button:not(.disabled):hover {
-  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
 .main-button {
@@ -552,7 +546,7 @@ textarea {
 }
 
 .main-menu {
-  position: fixed;
+  position: sticky;
   z-index: 50;
   top: 0;
   width: 100%;
@@ -561,11 +555,11 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2.5vh 5vw;
+  padding: 0.75rem 1.5rem;
   box-sizing: border-box;
-  //border-bottom: 2px solid white;
   background-color: var(--primaryColor);
   user-select: none;
+  border-bottom: 2px solid var(--borderColor);
 
 
   img {
@@ -576,9 +570,15 @@ textarea {
   }
 
 
+  .brand {
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.15rem;
+  }
+
   .logo {
     font-weight: bold;
-    font-size: 1.5rem;
+    font-size: 1.1rem;
     font-family: $primaryFont;
   }
 
@@ -609,6 +609,57 @@ textarea {
   }
 }
 
+@media (max-width: 640px) {
+  .main-menu {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .main-menu .brand {
+    row-gap: 0.05rem;
+  }
+
+  .main-menu .logo {
+    font-size: 0.9rem;
+  }
+
+  .main-menu .links {
+    column-gap: 0.75rem;
+    row-gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .main-menu .links a {
+    font-size: 0.8rem;
+  }
+
+  .connect-button {
+    padding: 0.45rem 0.8rem;
+  }
+}
+
+.wood-surface {
+  position: relative;
+  background:
+    radial-gradient(120% 200% at 20% 100%, rgba(255, 255, 255, .045), transparent 60%),
+    repeating-linear-gradient(12deg, rgba(255, 255, 255, .06) 0 2px, rgba(0, 0, 0, .05) 2px 8px),
+    linear-gradient(12deg, #1a0f07, #24140a 40%, #1a0f07);
+  background-blend-mode: overlay, multiply, normal;
+}
+
+.wood-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .12) 0 1px, transparent 1px 2px);
+  opacity: .5;
+}
+
+.wood-surface>* {
+  position: relative;
+  z-index: 1;
+}
+
 .footer {
   width: 100%;
   height: auto;
@@ -620,9 +671,10 @@ textarea {
   color: var(--secondaryColor);
   font-size: 14px;
   //border-bottom: 2px solid white;
-  background-color: var(--primaryColor);
+  //background-color: var(--primaryColor);
   row-gap: 1rem;
   padding: 2rem 0rem;
+
 
   // border-top: 1px solid var(--borderColor);
 
@@ -650,7 +702,8 @@ textarea {
 .popup-content {
   width: 90%;
   max-width: 700px;
-  background-color: #000;
+  background-color: transparent;
+  @extend .wood-surface;
   pointer-events: auto;
   max-height: 90%;
   overflow: auto;
@@ -663,6 +716,32 @@ textarea {
   display: flex;
   flex-direction: column;
   line-height: 1.5;
+
+  .divider {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0.75rem 0;
+    color: var(--secondaryColor);
+    opacity: 0.8;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background-color: var(--borderColor);
+    opacity: 0.6;
+  }
+
+  .divider span {
+    display: inline-block;
+    margin: 0 0.75rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.15rem;
+  }
 
   h2 {
     font-family: $primaryFont;
@@ -738,6 +817,42 @@ textarea {
 
   .button:not(.disabled):hover {
     opacity: 1;
+  }
+
+  /* Neon red glow CTA inside modal */
+  .play-button {
+    padding: 0.9rem 1.6rem;
+    border-radius: 8px;
+    background:
+      radial-gradient(120% 180% at 50% 120%, rgba(214, 0, 48, .45), rgba(214, 0, 48, .15) 55%, rgba(214, 0, 48, .06)),
+      linear-gradient(180deg, #e51f46, #b8002f);
+    border: 1px solid rgba(184, 0, 47, .6);
+    box-shadow: 0 0 0 2px rgba(184, 0, 47, .25) inset, 0 10px 24px rgba(184, 0, 47, .35), 0 0 44px rgba(184, 0, 47, .35);
+    transform: translateZ(0);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+
+    p,
+    a {
+      color: var(--primaryColor);
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+  }
+
+  .play-button:hover {
+    transform: scale(1.03);
+    box-shadow: 0 0 0 2px rgba(184, 0, 47, .35) inset, 0 14px 32px rgba(184, 0, 47, .45), 0 0 60px rgba(184, 0, 47, .5);
+    background:
+      radial-gradient(120% 180% at 50% 120%, rgba(214, 0, 48, .55), rgba(214, 0, 48, .2) 55%, rgba(214, 0, 48, .1)),
+      linear-gradient(180deg, #d4143a, #b8002f);
+  }
+
+  @media (max-width: 640px) {
+    .play-button {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
   }
 }
 
