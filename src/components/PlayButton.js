@@ -252,7 +252,7 @@ const PlayButton = ({
             <p className="eyebrow">Jukebox — one transaction</p>
             <h2>Take the stage</h2>
             <p className="modal-sub">
-              Play any NFT on Ethereum — yours or anyone else's. It goes on
+              Play any NFT on Ethereum — yours or anyone else&apos;s. It goes on
               display for everyone, and you accrue 120 $JUKE every block it
               stays up.
             </p>
