@@ -1,22 +1,28 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Popup from "reactjs-popup";
-import ConnectButton from "./ConnectButton";
 
-import { useMetamask } from "@/providers/MetamaskProvider";
+import { useMetamask, useMetamaskUpdate } from "@/providers/MetamaskProvider";
 
 import { ethers } from "ethers";
 import JukeBoxTokenABI from "../data/JukeBoxToken.json"; // Adjust the path as necessary
+
+// Chainlink ETH/USD price feed (mainnet), used for the fee estimate in USD
+const ETH_USD_FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 
 const PlayButton = ({
   triggerLabel = "Show off any NFT and earn $JUKE for as long as it stays up",
 }) => {
   const contractAddress = "0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4";
   const metamask = useMetamask();
+  const connect = useMetamaskUpdate();
   const [nftContract, setNftContract] = useState("");
   const [tokenId, setTokenId] = useState("");
   const [openseaUrl, setOpenseaUrl] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false); // Loading state
+  const [gasEstimate, setGasEstimate] = useState(null); // { eth, usd }
+  const [estimating, setEstimating] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const parseOpenseaUrl = (url) => {
     try {
@@ -41,6 +47,94 @@ const PlayButton = ({
 
     return null;
   };
+
+  // Live network-fee estimate: dry-runs playJukeBox. With no input yet, it
+  // estimates against the NFT currently on stage (replaying it is a valid
+  // transaction, so the cost is representative). Debounced while typing.
+  useEffect(() => {
+    if (!modalOpen || typeof window === "undefined" || !window.ethereum) {
+      setGasEstimate(null);
+      setEstimating(false);
+      return;
+    }
+
+    const empty = !openseaUrl && !nftContract && !tokenId;
+    let inputs = null;
+    if (openseaUrl) {
+      const parsed = parseOpenseaUrl(openseaUrl.trim());
+      if (parsed) inputs = { contract: parsed.contract, id: parsed.id };
+    } else if (nftContract && tokenId) {
+      inputs = { contract: nftContract.trim(), id: tokenId.trim() };
+    }
+
+    const validInputs =
+      inputs &&
+      ethers.utils.isAddress(inputs.contract) &&
+      /^\d+$/.test(inputs.id);
+
+    if (!empty && !validInputs) {
+      setGasEstimate(null);
+      setEstimating(false);
+      return;
+    }
+
+    let cancelled = false;
+    setEstimating(true);
+
+    const timer = setTimeout(
+      async () => {
+        try {
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const contract = new ethers.Contract(
+            contractAddress,
+            JukeBoxTokenABI,
+            provider.getSigner()
+          );
+          const feed = new ethers.Contract(
+            ETH_USD_FEED,
+            ["function latestAnswer() view returns (int256)"],
+            provider
+          );
+
+          let target = inputs;
+          if (empty) {
+            const [currentContract, currentId] = await Promise.all([
+              contract.nftContract(),
+              contract.tokenId(),
+            ]);
+            target = { contract: currentContract, id: currentId };
+          }
+
+          const [gas, feeData, ethUsd] = await Promise.all([
+            contract.estimateGas.playJukeBox(target.contract, target.id),
+            provider.getFeeData(),
+            feed.latestAnswer().catch(() => null),
+          ]);
+
+          const gasPrice = feeData.gasPrice || feeData.maxFeePerGas;
+          if (!gasPrice) throw new Error("No gas price available");
+
+          const costEth = parseFloat(
+            ethers.utils.formatEther(gas.mul(gasPrice))
+          );
+          const usd = ethUsd ? costEth * (Number(ethUsd) / 1e8) : null;
+
+          if (!cancelled) setGasEstimate({ eth: costEth, usd });
+        } catch (_) {
+          if (!cancelled) setGasEstimate(null);
+        } finally {
+          if (!cancelled) setEstimating(false);
+        }
+      },
+      empty ? 100 : 700
+    );
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, openseaUrl, nftContract, tokenId]);
 
   const checkNFTValidity = async () => {
     let contractToUse = nftContract;
@@ -126,7 +220,7 @@ const PlayButton = ({
         result.tokenIdToUse
       );
       await tx.wait(); // Wait for the transaction to be mined
-      setInfoMessage("NFT playing successfully");
+      setInfoMessage("Your NFT is on stage.");
     } catch (error) {
       console.error("Error playing NFT:", error);
       setInfoMessage("Failed to play NFT");
@@ -145,6 +239,8 @@ const PlayButton = ({
         <Popup
           lockScroll={true}
           modal={true}
+          onOpen={() => setModalOpen(true)}
+          onClose={() => setModalOpen(false)}
           trigger={
             <div id="play-nft" className={"play-button"}>
               {" "}
@@ -152,41 +248,67 @@ const PlayButton = ({
             </div>
           }
         >
-          {" "}
           <div className="nft-player mint-overlay">
-            {" "}
+            <p className="eyebrow">Jukebox — one transaction</p>
+            <h2>Take the stage</h2>
+            <p className="modal-sub">
+              Play any NFT on Ethereum — yours or anyone else's. It goes on
+              display for everyone, and you accrue 120 $JUKE every block it
+              stays up.
+            </p>
             <input
               type="text"
-              placeholder="Paste OpenSea URL"
+              placeholder="Paste an OpenSea URL"
               value={openseaUrl}
               onChange={(e) => setOpenseaUrl(e.target.value)}
-            />{" "}
+              onKeyDown={(e) => e.key === "Enter" && handlePlay()}
+            />
             <div className="divider">
-              {" "}
-              <span>OR</span>{" "}
-            </div>{" "}
+              <span>or</span>
+            </div>
             <input
               type="text"
               placeholder="NFT contract address"
               value={nftContract}
               onChange={(e) => setNftContract(e.target.value)}
-            />{" "}
+              onKeyDown={(e) => e.key === "Enter" && handlePlay()}
+            />
             <input
               type="text"
-              placeholder="Token id"
+              placeholder="Token ID"
               value={tokenId}
               onChange={(e) => setTokenId(e.target.value)}
-            />{" "}
+              onKeyDown={(e) => e.key === "Enter" && handlePlay()}
+            />
             <div className="play-button" onClick={handlePlay}>
-              {" "}
-              PLAY NFT{" "}
-            </div>{" "}
-            {isLoading && <p>Processing...</p>}
-            {infoMessage && <p> {infoMessage}</p>}
-          </div>{" "}
+              <p>Take the Stage</p>
+            </div>
+            {(estimating || gasEstimate) && (
+              <p className="gas-note">
+                {estimating
+                  ? "Estimating network fee…"
+                  : `Network fee ≈ ${gasEstimate.eth.toFixed(4)} ETH` +
+                    (gasEstimate.usd != null
+                      ? ` ($${gasEstimate.usd.toFixed(2)})`
+                      : "")}
+              </p>
+            )}
+            {isLoading && <p className="status-note">Processing…</p>}
+            {infoMessage && <p className="status-note">{infoMessage}</p>}
+          </div>
         </Popup>
+      ) : metamask.installed ? (
+        // Not connected (or wrong network): the CTA itself starts the
+        // wallet connection, so the header keeps the only connect button.
+        <div className="play-button" onClick={connect}>
+          <p>{triggerLabel}</p>
+        </div>
       ) : (
-        <ConnectButton />
+        <div className="play-button">
+          <a href="https://metamask.io" target="_blank" rel="noreferrer">
+            Install MetaMask
+          </a>
+        </div>
       )}
     </div>
   );

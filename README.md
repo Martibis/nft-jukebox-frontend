@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Jukebox — an autonomous exhibition protocol on Ethereum
 
-## Getting Started
+**[nftjukebox.app](https://nftjukebox.app)**
 
-First, run the development server:
+One NFT is on stage at a time, visible to everyone. Anyone can take the stage
+with any NFT on Ethereum — yours or anyone else's — and earn **120 $JUKE per
+block** for as long as it stays up. When the next player takes the stage,
+everything you accrued is minted straight to your wallet.
+
+This repository is the open-source frontend. The protocol itself is a single,
+immutable smart contract.
+
+## How the protocol works
+
+The contract ([`0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4`](https://etherscan.io/address/0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4), verified on Etherscan):
+
+- `playJukeBox(nftContract, tokenId)` puts any ERC-721 or ERC-1155 on stage —
+  there is no ownership check, the artwork can be anyone's.
+- Before the new piece takes over, the previous player is paid
+  `blocksPlayed × 120 $JUKE`, minted in that same transaction.
+- `nowPlaying()` returns the token URI of the piece currently on view.
+- **$JUKE** is a standard ERC-20 with 18 decimals. Supply is uncapped and
+  minted only through play rewards.
+- There is no owner, no admin functions, and no upgrade path. Nobody can pause
+  it or take the stage down.
+
+$JUKE trades on [Uniswap](https://app.uniswap.org/swap?chain=mainnet&inputCurrency=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2&outputCurrency=0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4).
+
+## Running the frontend
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). A production build is
+`npm run build && npm start`.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+Reading the chain works without a wallet (falls back to a public RPC); playing
+an NFT requires MetaMask on Ethereum mainnet.
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+## Stack
 
-## Learn More
+- [Next.js 14](https://nextjs.org/) (App Router) with SCSS
+- [ethers v5](https://docs.ethers.org/v5/) for contract reads/writes and ENS
+  resolution
+- `next/font` (Fraunces, Space Grotesk, IBM Plex Mono)
+- Generated Open Graph image, JSON-LD structured data, sitemap and robots via
+  the App Router metadata APIs
 
-To learn more about Next.js, take a look at the following resources:
+## Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+  app/            layout (metadata, fonts, JSON-LD), page, styles, OG image
+  components/     Header, Stage (now playing + placard), InfoSections,
+                  PlayButton (take-the-stage modal), ConnectButton,
+                  JukeBoxInterface (renders the piece on view)
+  data/           contract ABIs, FAQ content (shared by UI and JSON-LD)
+  providers/      MetaMask provider/context
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+Contributions and forks are welcome — build your own window onto the same
+stage.
