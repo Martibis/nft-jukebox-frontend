@@ -385,6 +385,10 @@
     color: var(--ink-40);
 }
 
+.archive-card .thumb {
+    text-decoration: none;
+}
+
 .archive-card .a-name {
     padding: 0.7rem 0.8rem 0.2rem;
     font-size: 0.9rem;
@@ -392,6 +396,11 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.archive-card .a-name a {
+    color: inherit;
+    text-decoration: none;
 }
 
 .archive-card .a-meta {
@@ -408,8 +417,38 @@
     font-variant-numeric: tabular-nums;
 }
 
-.archive-card .a-meta.accent {
-    color: var(--accent);
+/* ENS names are lowercase by convention and address checksums are
+   case-sensitive — don't let the uppercase treatment touch them. */
+
+.archive-card .a-meta.a-player {
+    text-transform: none;
+}
+
+.archive-card .a-meta a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.archive-card .a-meta a:hover {
+    color: var(--ink);
+}
+
+/* External-link cue: a small ↗ that fades in on hover, instead of underlines */
+
+.archive-card .a-name a::after,
+.archive-card .a-meta a::after {
+    content: "\2197";
+    display: inline-block;
+    margin-left: 0.35em;
+    font-size: 0.78em;
+    opacity: 0;
+    transform: translateY(1px);
+    transition: opacity 0.15s;
+}
+
+.archive-card .a-name a:hover::after,
+.archive-card .a-meta a:hover::after {
+    opacity: 0.7;
 }
 
 .archive-card .a-meta:last-child {

@@ -34,15 +34,26 @@ const ArchiveCard = ({ entry }) => {
   }, [entry.nftContract, entry.tokenId]);
 
   const resolved = failed || meta != null;
+  const openseaUrl = `https://opensea.io/assets/ethereum/${entry.nftContract}/${entry.tokenId}`;
+
+  const linkOrSpan = (href, title, children) =>
+    href ? (
+      <a href={href} target="_blank" rel="noreferrer" title={title}>
+        {children}
+      </a>
+    ) : (
+      <span title={title}>{children}</span>
+    );
 
   return (
-    <a
-      className="archive-card"
-      href={`https://opensea.io/assets/ethereum/${entry.nftContract}/${entry.tokenId}`}
-      target="_blank"
-      rel="noreferrer"
-    >
-      <div className="thumb">
+    <article className="archive-card">
+      <a
+        className="thumb"
+        href={openseaUrl}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="View this piece on OpenSea"
+      >
         {meta?.image && !imgError ? (
           <img
             src={meta.image}
@@ -53,26 +64,36 @@ const ArchiveCard = ({ entry }) => {
         ) : (
           <span className="thumb-fallback">{resolved ? "···" : ""}</span>
         )}
-      </div>
+      </a>
       <p className="a-name" title={meta?.name}>
-        {meta?.name || (failed ? `#${entry.tokenId}` : "…")}
+        <a href={openseaUrl} target="_blank" rel="noreferrer">
+          {meta?.name || (failed ? `#${entry.tokenId}` : "…")}
+        </a>
       </p>
-      <p
-        className="a-meta"
-        title={`On view for ${entry.blocksHeld.toLocaleString("en-US")} blocks`}
-      >
-        {compact.format(entry.blocksHeld)} blocks
+      <p className="a-meta">
+        {linkOrSpan(
+          entry.txHash ? `https://etherscan.io/tx/${entry.txHash}` : null,
+          `On view for ${entry.blocksHeld.toLocaleString("en-US")} blocks — view the play transaction`,
+          `${compact.format(entry.blocksHeld)} blocks`
+        )}
       </p>
-      <p
-        className="a-meta accent"
-        title={`${entry.earned.toLocaleString("en-US")} $JUKE earned`}
-      >
-        {compact.format(entry.earned)} $JUKE
+      <p className="a-meta">
+        {linkOrSpan(
+          entry.payoutTxHash
+            ? `https://etherscan.io/tx/${entry.payoutTxHash}`
+            : null,
+          `${entry.earned.toLocaleString("en-US")} $JUKE earned — view the payout transaction`,
+          `${compact.format(entry.earned)} $JUKE`
+        )}
       </p>
-      <p className="a-meta" title={entry.player}>
-        by {shortAddress(entry.player)}
+      <p className="a-meta a-player">
+        {linkOrSpan(
+          `https://etherscan.io/address/${entry.player}`,
+          entry.player,
+          `by ${entry.playerEns || shortAddress(entry.player)}`
+        )}
       </p>
-    </a>
+    </article>
   );
 };
 
@@ -115,6 +136,9 @@ const Archive = () => {
         ...play,
         blocksHeld: plays[i + 1].startBlock - play.startBlock,
         earned: 120 * (plays[i + 1].startBlock - play.startBlock),
+        // The $JUKE payout is lazy — it lands in the tx of the play that
+        // took this piece off the stage.
+        payoutTxHash: plays[i + 1].txHash || null,
       }));
       setEntries(previous.reverse());
       maybeSync();

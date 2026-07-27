@@ -101,6 +101,49 @@ async function reverseEns(address) {
   }
 }
 
+/* --------------------- Player names for the archive ---------------------- */
+
+const ensCache = new Map(); // lowercased address -> verified name | null
+const ensPending = new Set();
+
+const applyKnownNames = () => {
+  if (!state) return;
+  state.plays = state.plays.map((play) => ({
+    ...play,
+    playerEns: ensCache.get(play.player.toLowerCase()) || null,
+  }));
+  const stageEns = ensCache.get(state.nowPlaying.playerAddress.toLowerCase());
+  if (stageEns) state.nowPlaying.player = stageEns;
+};
+
+// Resolve each unique player once and patch the cached state as names land.
+// The current stage player is always the last play, so this covers the
+// placard too. Returns the resolution promise so a cold build can await it.
+function resolvePlayerNames() {
+  const plays = state?.plays;
+  if (!plays) return Promise.resolve();
+
+  applyKnownNames(); // fresh rebuilds get already-cached names right away
+
+  const unresolved = [
+    ...new Set(plays.map((play) => play.player.toLowerCase())),
+  ].filter((address) => !ensCache.has(address) && !ensPending.has(address));
+  if (!unresolved.length) return Promise.resolve();
+
+  unresolved.forEach((address) => ensPending.add(address));
+  return (async () => {
+    // Concurrent per player — unique players number in the dozens at most,
+    // and sequential resolution blows the cold-start budget.
+    await Promise.all(
+      unresolved.map(async (address) => {
+        ensCache.set(address, await reverseEns(address));
+        ensPending.delete(address);
+      })
+    );
+    applyKnownNames();
+  })().catch(() => {});
+}
+
 /* ------------------------------ Play history ----------------------------- */
 
 const parseLogs = (logs) =>
@@ -115,6 +158,7 @@ const parseLogs = (logs) =>
         nftContract: args.nftContract,
         tokenId: args.tokenId.toString(),
         startBlock: args.startBlock.toNumber(),
+        txHash: log.transactionHash || null,
       };
     })
     .sort((a, b) => a.startBlock - b.startBlock);
@@ -195,6 +239,7 @@ const fetchCore = () =>
   });
 
 async function rebuild() {
+  const isCold = !state;
   const timings = [];
   const [tokenURI, nftContract, tokenId, startBlock, player, currentBlock] =
     await timed("core", fetchCore(), timings);
@@ -243,8 +288,6 @@ async function rebuild() {
     timed("plays", resolvePlays(), timings),
   ]);
 
-  console.log("stage rebuild:", timings.join(", "));
-
   state = {
     checkedAt: Date.now(),
     currentBlock,
@@ -261,15 +304,23 @@ async function rebuild() {
     },
   };
 
-  // ENS is display sugar — resolve it off the critical path and patch the
-  // cached state when it lands; the next snapshot poll picks it up.
-  reverseEns(player)
-    .then((ens) => {
-      if (ens && state?.nowPlaying?.playerAddress === player) {
-        state.nowPlaying.player = ens;
-      }
-    })
-    .catch(() => {});
+  // ENS is display sugar — normally resolved off the critical path, patching
+  // the cached state as names land. But on a cold build the very first
+  // response is the only one early visitors see, so wait for the names
+  // (bounded, so a slow resolver can't stall the whole endpoint).
+  const namesResolved = resolvePlayerNames();
+  if (isCold) {
+    await timed(
+      "ens",
+      Promise.race([
+        namesResolved,
+        new Promise((resolve) => setTimeout(resolve, 8_000)),
+      ]),
+      timings
+    );
+  }
+
+  console.log("stage rebuild:", timings.join(", "));
 }
 
 /* ------------------------------- Public API ------------------------------ */
