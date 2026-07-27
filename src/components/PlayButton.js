@@ -115,18 +115,25 @@ const PlayButton = ({
             target = { contract: currentContract, id: currentId };
           }
 
-          const [gas, feeData, ethUsd] = await Promise.all([
+          const [gas, feeData, ethUsd, tipHex] = await Promise.all([
             contract.estimateGas.playJukeBox(target.contract, target.id),
             provider.getFeeData(),
             feed.latestAnswer().catch(() => null),
+            // The network's actual suggested tip (ethers v5 hardcodes
+            // 1.5 gwei in getFeeData, which can be off either way)
+            provider.send("eth_maxPriorityFeePerGas", []).catch(() => null),
           ]);
 
-          // What a wallet actually charges ≈ gas × (base fee + priority
-          // tip). eth_gasPrice alone hugs the base fee and can undershoot
-          // the real cost by an order of magnitude.
+          // Match how wallets quote it: base fee padded ~1.35x (so the tx
+          // survives a rising base fee — the surplus is refunded) plus the
+          // suggested priority tip. eth_gasPrice alone hugs the base fee
+          // and can undershoot the real cost by an order of magnitude.
+          const tip = tipHex
+            ? ethers.BigNumber.from(tipHex)
+            : feeData.maxPriorityFeePerGas;
           const effectivePrice =
-            feeData.lastBaseFeePerGas && feeData.maxPriorityFeePerGas
-              ? feeData.lastBaseFeePerGas.add(feeData.maxPriorityFeePerGas)
+            feeData.lastBaseFeePerGas && tip
+              ? feeData.lastBaseFeePerGas.mul(135).div(100).add(tip)
               : feeData.maxFeePerGas || feeData.gasPrice;
           if (!effectivePrice) throw new Error("No gas price available");
 
