@@ -8,12 +8,17 @@ export const maxDuration = 60; // cold build fetches metadata + history
 // It only changes when the stage changes hands, which the cache detects
 // with its cheap startBlock() probe.
 
-export async function GET() {
+export async function GET(request) {
+  // fresh=1: right after a stage change — make sure the state is current
+  // and skip the CDN cache on the way back.
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
   try {
-    const { plays } = await getStageState();
+    const { plays } = await getStageState({ fresh });
     return NextResponse.json(plays, {
       headers: {
-        "Cache-Control": "public, s-maxage=12, stale-while-revalidate=600",
+        "Cache-Control": fresh
+          ? "no-store"
+          : "public, s-maxage=12, stale-while-revalidate=600",
       },
     });
   } catch (error) {

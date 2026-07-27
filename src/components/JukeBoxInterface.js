@@ -13,14 +13,12 @@ const animationLabel = (type) => {
   return "Run interactive piece";
 };
 
-// Last successfully resolved piece, shown instantly on the next visit while
-// the fresh snapshot loads (which then overwrites it).
+// Retired localStorage cache — the CDN snapshot paints fast enough, and a
+// stored piece could flash stale art after a stage change.
 const LAST_PIECE_KEY = "jukebox-last-piece";
-const LAST_PIECE_MAX_BYTES = 800_000; // stay well under localStorage quota
 
 const JukeBoxInterface = ({ autoRefresh = false }) => {
   const startBlockRef = useRef(0);
-  const liveLoadedRef = useRef(false); // true once a real snapshot applied
   const [staticMedia, setStaticMedia] = useState(null); // { url, type }
   const [animMedia, setAnimMedia] = useState(null); // { url, type }
   const [showAnim, setShowAnim] = useState(false);
@@ -44,7 +42,6 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
       (tokenIdStr.length > 10 ? tokenIdStr.slice(0, 6) + "…" : tokenIdStr);
     const pieceName = snap.name || fallbackName;
 
-    liveLoadedRef.current = true;
     startBlockRef.current = snap.startBlock || 0;
 
     setName(pieceName);
@@ -68,26 +65,6 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     if (snap.player) detail.player = snap.player;
     if (snap.currentBlock) detail.currentBlock = snap.currentBlock;
     publishNowPlaying(detail);
-
-    // Remember this piece for an instant paint on the next visit
-    if (snap.staticMedia || snap.animMedia) {
-      try {
-        const saved = JSON.stringify({
-          name: pieceName,
-          nftContract: snap.nftContract,
-          tokenId: tokenIdStr,
-          startBlock: snap.startBlock,
-          player: snap.player,
-          staticMedia: snap.staticMedia,
-          animMedia: snap.animMedia,
-        });
-        if (saved.length < LAST_PIECE_MAX_BYTES) {
-          localStorage.setItem(LAST_PIECE_KEY, saved);
-        }
-      } catch (_) {
-        /* quota or serialization issues — just skip the cache */
-      }
-    }
   };
 
   const loadSnapshot = async () => {
@@ -98,40 +75,13 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     return snap;
   };
 
-  // Paint the last known piece immediately; the snapshot fetch below
-  // replaces it as soon as fresh data arrives.
+  // Clear the retired localStorage cache for returning visitors
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LAST_PIECE_KEY);
-      if (!raw || liveLoadedRef.current) return;
-      const saved = JSON.parse(raw);
-      if (!saved || (!saved.staticMedia && !saved.animMedia)) return;
-
-      setStaticMedia((current) => current || saved.staticMedia || null);
-      setAnimMedia((current) => current || saved.animMedia || null);
-      if (saved.name) setName((current) => current || saved.name);
-      if (saved.nftContract) {
-        setNftContract((current) => current || saved.nftContract);
-      }
-      if (saved.tokenId) setTokenId((current) => current || saved.tokenId);
-      if (
-        !saved.staticMedia &&
-        saved.animMedia &&
-        isSafeType(saved.animMedia.type)
-      ) {
-        setShowAnim(true);
-      }
-
-      const detail = {};
-      if (saved.name) detail.name = saved.name;
-      if (saved.nftContract) detail.nftContract = saved.nftContract;
-      if (saved.tokenId) detail.tokenId = saved.tokenId;
-      if (saved.player) detail.player = saved.player;
-      if (Object.keys(detail).length) publishNowPlaying(detail);
+      localStorage.removeItem(LAST_PIECE_KEY);
     } catch (_) {
-      /* corrupt cache — ignore, the snapshot will repopulate it */
+      /* no-op */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Initial snapshot (with retries) + manual refresh from the stage toolbar.

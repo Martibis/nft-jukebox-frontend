@@ -97,27 +97,32 @@ export const getReadProvider = () => {
 
 let playsPromise = null;
 
+const fetchPlays = (url) => {
+  const promise = (async () => {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error("Plays fetch failed");
+    return await response.json();
+  })();
+  promise.catch(() => {
+    playsPromise = null; // allow a retry on failure
+  });
+  return promise;
+};
+
 // Every play ever, oldest first: { player, nftContract, tokenId, startBlock }.
-// Served by /api/plays (free RPCs can't handle the multi-million-block
-// getLogs range, so the server queries an indexer and caches the result).
+// Served by /api/plays from the server-side stage cache.
 export const getPlays = () => {
   if (!playsPromise) {
-    playsPromise = (async () => {
-      const response = await fetch("/api/plays");
-      if (!response.ok) throw new Error("Plays fetch failed");
-      return await response.json();
-    })();
-    playsPromise.catch(() => {
-      playsPromise = null; // allow a retry on failure
-    });
+    playsPromise = fetchPlays("/api/plays");
   }
   return playsPromise;
 };
 
-// Drop the memoized list and refetch — used after a stage change.
+// Refetch after a stage change, bypassing the CDN so the just-finished
+// piece is guaranteed to be in the list.
 export const refreshPlays = () => {
-  playsPromise = null;
-  return getPlays();
+  playsPromise = fetchPlays("/api/plays?fresh=1");
+  return playsPromise;
 };
 
 // Free public gateways, in order of preference. cloudflare-ipfs.com no

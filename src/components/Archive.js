@@ -67,7 +67,6 @@ const Archive = () => {
   useEffect(() => {
     let cancelled = false;
     let timer = null;
-    let changeTimer = null;
 
     const apply = (plays) => {
       // Every play except the current one (last), most recent first.
@@ -97,23 +96,20 @@ const Archive = () => {
     load();
 
     // When the stage changes hands, the finished piece belongs in the
-    // archive. Small delay lets the CDN pick up the fresh list first.
+    // archive. The server state is already rebuilt by the time this event
+    // fires, and refreshPlays bypasses the CDN — refetch right away.
     const onStageChange = () => {
-      clearTimeout(changeTimer);
-      changeTimer = setTimeout(() => {
-        refreshPlays()
-          .then((plays) => !cancelled && apply(plays))
-          .catch(() => {
-            /* keep the current list */
-          });
-      }, 2500);
+      refreshPlays()
+        .then((plays) => !cancelled && apply(plays))
+        .catch(() => {
+          /* keep the current list */
+        });
     };
     window.addEventListener("jukebox-plays-changed", onStageChange);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      clearTimeout(changeTimer);
       window.removeEventListener("jukebox-plays-changed", onStageChange);
     };
   }, []);

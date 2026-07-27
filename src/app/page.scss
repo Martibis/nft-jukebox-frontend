@@ -99,6 +99,8 @@
 .nft-renderer {
     position: absolute;
     inset: clamp(0.85rem, 2vw, 1.9rem);
+    display: flex;
+    flex-direction: column;
 }
 
 .nft-renderer .ambient-bg {
@@ -121,8 +123,9 @@
 }
 
 .nft-renderer .content-card {
-    position: absolute;
-    inset: 0;
+    position: relative;
+    flex: 1;
+    min-height: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -183,21 +186,20 @@
     width: min(420px, 92%);
 }
 
-/* Still-image-first: control to opt into the animation / interactive piece */
+/* Still-image-first: control to opt into the animation / interactive piece.
+   Sits in its own strip below the art — never on top of it. */
 
 .media-toggle {
-    position: absolute;
-    bottom: 0.9rem;
-    left: 50%;
-    transform: translateX(-50%);
+    position: relative;
     z-index: 3;
+    align-self: center;
+    margin-top: clamp(0.7rem, 1.5vw, 1.1rem);
     font-family: $monoFont;
     font-size: 0.64rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--ink);
     background: rgba(11, 11, 12, 0.72);
-    backdrop-filter: blur(10px);
     border: 1px solid var(--line-strong);
     padding: 0.55rem 1.1rem;
     white-space: nowrap;
@@ -209,8 +211,8 @@
 }
 
 .media-toggle.inline {
-    position: static;
-    transform: none;
+    align-self: auto;
+    margin-top: 0;
 }
 
 .interactive-gate {
