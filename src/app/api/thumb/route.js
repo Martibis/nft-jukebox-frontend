@@ -43,6 +43,8 @@ export async function GET(request) {
   const { searchParams } = request.nextUrl;
   const target = searchParams.get("url");
   const width = parseInt(searchParams.get("w") || "512", 10);
+  // png: for consumers that can't decode webp (the OG image renderer)
+  const asPng = searchParams.get("fmt") === "png";
 
   if (!target) {
     return NextResponse.json({ error: "Missing url parameter" }, { status: 400 });
@@ -56,12 +58,12 @@ export async function GET(request) {
     return NextResponse.json({ error }, { status: 400 });
   }
 
-  const cacheKey = width + ":" + url.toString();
+  const cacheKey = (asPng ? "png:" : "") + width + ":" + url.toString();
   const hit = cache.get(cacheKey);
   if (hit) {
     return new Response(hit, {
       headers: {
-        "Content-Type": "image/webp",
+        "Content-Type": asPng ? "image/png" : "image/webp",
         "Cache-Control": cacheControlFor(url.toString()),
       },
     });
@@ -92,18 +94,24 @@ export async function GET(request) {
       return proxyRedirect(request, target);
     }
 
-    // animated: keeps GIF/WebP animations intact in the output
-    const animated = type === "image/gif" || type === "image/webp";
-    const output = await sharp(source, { animated })
-      .resize({ width, withoutEnlargement: true })
-      .webp({ quality: WEBP_QUALITY, effort: 4 })
-      .toBuffer();
+    // animated: keeps GIF/WebP animations intact in the output. PNG can't
+    // animate, so that path takes the first frame instead.
+    const animated =
+      !asPng && (type === "image/gif" || type === "image/webp");
+    const pipeline = sharp(source, { animated }).resize({
+      width,
+      withoutEnlargement: true,
+    });
+    const output = await (asPng
+      ? pipeline.png()
+      : pipeline.webp({ quality: WEBP_QUALITY, effort: 4 })
+    ).toBuffer();
 
     remember(cacheKey, output);
 
     return new Response(output, {
       headers: {
-        "Content-Type": "image/webp",
+        "Content-Type": asPng ? "image/png" : "image/webp",
         "Cache-Control": cacheControlFor(url.toString()),
       },
     });

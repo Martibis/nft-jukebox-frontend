@@ -68,6 +68,7 @@ export const metadata = {
     card: 'summary_large_image',
     title: 'NFT Jukebox — The On-Chain Stage. Play Any NFT, Earn $JUKE.',
     description: siteDescription,
+    site: '@ShaikTibout',
     creator: '@ShaikTibout',
   },
   robots: {
@@ -91,15 +92,33 @@ export const viewport = {
   themeColor: '#0B0B0C',
 }
 
+const JUKE_TOKEN = '0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4'
+
 const jsonLd = {
   '@context': 'https://schema.org',
   '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${siteUrl}/#org`,
+      url: siteUrl,
+      name: siteName,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${siteUrl}/icon.svg`,
+      },
+      sameAs: [
+        'https://github.com/Martibis/nft-jukebox-frontend',
+        'https://x.com/ShaikTibout',
+        `https://etherscan.io/token/${JUKE_TOKEN}`,
+      ],
+    },
     {
       '@type': 'WebSite',
       '@id': `${siteUrl}/#website`,
       url: siteUrl,
       name: siteName,
       description: siteDescription,
+      publisher: { '@id': `${siteUrl}/#org` },
     },
     {
       '@type': 'WebApplication',
@@ -109,7 +128,9 @@ const jsonLd = {
       description: siteDescription,
       applicationCategory: 'FinanceApplication',
       operatingSystem: 'Web',
-      browserRequirements: 'Requires a web3 wallet such as MetaMask',
+      browserRequirements:
+        'Requires a web3 wallet such as MetaMask, Rabby or Coinbase Wallet',
+      publisher: { '@id': `${siteUrl}/#org` },
       offers: {
         '@type': 'Offer',
         price: '0',
