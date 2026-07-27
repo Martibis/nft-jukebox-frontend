@@ -292,54 +292,19 @@ export const resolveMediaPair = async (metadata) => {
 
 const displayCache = new Map();
 
-// Resolve { name, image } for an NFT, for archive thumbnails. Cached per token.
+// Resolve { name, image } for an NFT, for archive thumbnails. The heavy
+// lifting (tokenURI call + metadata fetch) happens once server-side and is
+// CDN-cached long-term; the browser makes one cheap GET per token.
 export const getNftDisplay = (nftContract, tokenId) => {
   const key = `${nftContract}:${tokenId}`;
   if (displayCache.has(key)) return displayCache.get(key);
 
   const promise = (async () => {
-    const provider = getReadProvider();
-    let uri;
-    try {
-      uri = await new ethers.Contract(
-        nftContract,
-        ["function tokenURI(uint256) view returns (string)"],
-        provider
-      ).tokenURI(tokenId);
-    } catch (_) {
-      uri = await new ethers.Contract(
-        nftContract,
-        ["function uri(uint256) view returns (string)"],
-        provider
-      ).uri(tokenId);
-    }
-
-    let metadata;
-    if (uri.startsWith("data:")) {
-      const commaIndex = uri.indexOf(",");
-      const body = uri.substring(commaIndex + 1);
-      const isBase64 = /;base64,/i.test(uri.substring(0, commaIndex + 1));
-      metadata = JSON.parse(isBase64 ? atob(body) : decodeURIComponent(body));
-    } else {
-      metadata = await fetchJson(uri);
-    }
-
-    const asThumbUrl = (mediaUri) => thumbUrl(mediaUri, 512);
-
-    let image = null;
-    if (metadata.image) {
-      image = asThumbUrl(metadata.image);
-    } else if (metadata.image_data) {
-      image =
-        "data:image/svg+xml;utf8," + encodeURIComponent(metadata.image_data);
-    } else if (
-      metadata.animation_url &&
-      /\.(png|jpe?g|gif|webp|avif|svg)(\?|$)/i.test(metadata.animation_url)
-    ) {
-      image = asThumbUrl(metadata.animation_url);
-    }
-
-    return { name: metadata.name || "Untitled", image };
+    const response = await fetch(
+      `/api/nft-display?contract=${nftContract}&id=${tokenId}`
+    );
+    if (!response.ok) throw new Error("display fetch failed");
+    return await response.json();
   })();
 
   displayCache.set(key, promise);
