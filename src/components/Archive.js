@@ -66,23 +66,37 @@ const Archive = () => {
 
   useEffect(() => {
     let cancelled = false;
+    let timer = null;
 
-    getPlays()
-      .then((plays) => {
-        if (cancelled) return;
-        // Every play except the current one (last), most recent first.
-        // Blocks held = until the next play's start block.
-        const previous = plays.slice(0, -1).map((play, i) => ({
-          ...play,
-          blocksHeld: plays[i + 1].startBlock - play.startBlock,
-          earned: 120 * (plays[i + 1].startBlock - play.startBlock),
-        }));
-        setEntries(previous.reverse());
-      })
-      .catch(() => !cancelled && setEntries([]));
+    // A transient /api/plays failure shouldn't hide the archive for the
+    // whole session — retry a few times with backoff before giving up.
+    const load = (attempt = 0) => {
+      getPlays()
+        .then((plays) => {
+          if (cancelled) return;
+          // Every play except the current one (last), most recent first.
+          // Blocks held = until the next play's start block.
+          const previous = plays.slice(0, -1).map((play, i) => ({
+            ...play,
+            blocksHeld: plays[i + 1].startBlock - play.startBlock,
+            earned: 120 * (plays[i + 1].startBlock - play.startBlock),
+          }));
+          setEntries(previous.reverse());
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt < 3) {
+            timer = setTimeout(() => load(attempt + 1), 4000 * (attempt + 1));
+          } else {
+            setEntries([]);
+          }
+        });
+    };
+    load();
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, []);
 

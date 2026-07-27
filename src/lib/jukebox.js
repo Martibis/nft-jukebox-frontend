@@ -44,8 +44,12 @@ let readProvider = null;
 // fallback across public RPCs so one dead endpoint can't blank the site.
 export const getReadProvider = () => {
   if (!readProvider) {
-    if (typeof window !== "undefined" && window.ethereum) {
-      readProvider = new ethers.providers.Web3Provider(window.ethereum);
+    const injected = typeof window !== "undefined" ? window.ethereum : null;
+    // Only trust the wallet for reads while it's on mainnet — on any other
+    // chain every eth_call would silently query the wrong network.
+    const onMainnet = !injected?.chainId || injected.chainId === "0x1";
+    if (injected && onMainnet) {
+      readProvider = new ethers.providers.Web3Provider(injected);
     } else {
       readProvider = new ethers.providers.FallbackProvider(
         RPC_URLS.map((url, index) => ({
