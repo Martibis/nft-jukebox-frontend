@@ -1,20 +1,8 @@
 import { NextResponse } from "next/server";
+import { validateTarget } from "@/lib/urlGuard";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const FORBIDDEN_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
-function isPrivateHostname(hostname) {
-  if (/^(10\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.test(hostname)) return true;
-  if (/^(192\.168\.\d{1,3}\.\d{1,3})$/.test(hostname)) return true;
-  const match = hostname.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
-  if (match) {
-    const second = parseInt(match[1], 10);
-    if (second >= 16 && second <= 31) return true;
-  }
-  if (/^(169\.254\.\d{1,3}\.\d{1,3})$/.test(hostname)) return true;
-  return false;
-}
 
 async function proxy(request, method) {
   const { searchParams } = request.nextUrl;
@@ -26,25 +14,9 @@ async function proxy(request, method) {
     );
   }
 
-  let url;
-  try {
-    url = new URL(target);
-  } catch {
-    return NextResponse.json({ error: "Invalid url" }, { status: 400 });
-  }
-
-  if (!["http:", "https:"].includes(url.protocol)) {
-    return NextResponse.json(
-      { error: "Only http/https protocols are allowed" },
-      { status: 400 }
-    );
-  }
-
-  if (FORBIDDEN_HOSTS.has(url.hostname) || isPrivateHostname(url.hostname)) {
-    return NextResponse.json(
-      { error: "Target host is not allowed" },
-      { status: 400 }
-    );
+  const { url, error } = validateTarget(target);
+  if (error) {
+    return NextResponse.json({ error }, { status: 400 });
   }
 
   const outgoingHeaders = new Headers();

@@ -2,7 +2,8 @@ import { ethers } from "ethers";
 
 export const JUKE_TOKEN = "0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4";
 
-const RPC_URL = "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c";
+export const RPC_URL =
+  "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c";
 
 let readProvider = null;
 
@@ -85,12 +86,30 @@ export const httpCandidates = (uri) => {
 export const wrapWithProxy = (httpUrl) =>
   "/api/proxy?url=" + encodeURIComponent(httpUrl);
 
+// Compressed WebP rendition via the sharp endpoint. The server caches the
+// result (in-process LRU + CDN) and falls back to the plain proxy for
+// anything it can't compress.
+export const thumbUrl = (uri, width = 512) => {
+  if (uri.startsWith("data:")) return uri;
+  return (
+    "/api/thumb?url=" +
+    encodeURIComponent(httpCandidates(uri)[0]) +
+    "&w=" +
+    width
+  );
+};
+
+// On the server we fetch targets directly (we ARE the proxy); in the
+// browser everything goes through /api/proxy.
+const probeUrl = (candidate) =>
+  typeof window === "undefined" ? candidate : wrapWithProxy(candidate);
+
 // Fetch JSON from a URI, walking the gateway candidates until one responds.
 export const fetchJson = async (uri) => {
   let lastError = null;
   for (const candidate of httpCandidates(uri)) {
     try {
-      const response = await fetch(wrapWithProxy(candidate));
+      const response = await fetch(probeUrl(candidate));
       if (!response.ok) throw new Error("HTTP " + response.status);
       return await response.json();
     } catch (error) {
@@ -98,6 +117,145 @@ export const fetchJson = async (uri) => {
     }
   }
   throw lastError || new Error("Fetch failed");
+};
+
+/* ---------------- Media resolution (used on client and server) ---------- */
+
+// IPFS gateways frequently report application/octet-stream, so the file
+// extension is often the more trustworthy signal.
+const EXTENSION_MIME = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  m4v: "video/mp4",
+  ogv: "video/ogg",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+  flac: "audio/flac",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  glb: "model/gltf-binary",
+  gltf: "model/gltf+json",
+  html: "text/html",
+  htm: "text/html",
+  pdf: "application/pdf",
+};
+
+const guessMimeFromUrl = (url) => {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    const dot = pathname.lastIndexOf(".");
+    if (dot === -1) return null;
+    return EXTENSION_MIME[pathname.slice(dot + 1)] || null;
+  } catch (_) {
+    return null;
+  }
+};
+
+// Reject anything that isn't a real content URI (e.g. javascript: URLs
+// smuggled into metadata).
+const ALLOWED_URI = /^(data:|ipfs:\/\/|ar:\/\/|https?:\/\/)/i;
+
+// Media the browser parses without executing code — safe to show unprompted.
+export const isSafeType = (type) =>
+  ["image/", "video/", "audio/", "model/"].some((prefix) =>
+    type.startsWith(prefix)
+  );
+
+// Resolve a metadata URI to { url, type, origin? }, or null if it can't be
+// trusted. The returned url is what the browser should render (proxied,
+// except HTML which needs its real origin for relative assets).
+export const resolveMedia = async (uri) => {
+  if (typeof uri !== "string" || !ALLOWED_URI.test(uri.trim())) {
+    return null;
+  }
+  uri = uri.trim();
+
+  if (uri.startsWith("data:")) {
+    const mimeType = (uri.match(/^data:([^;,]*)/)?.[1] || "text/plain")
+      .trim()
+      .toLowerCase();
+
+    const commaIndex = uri.indexOf(",");
+    const beforeComma = uri.substring(0, commaIndex);
+    const afterComma = uri.substring(commaIndex + 1);
+
+    const src = /;base64,/i.test(beforeComma + ",")
+      ? uri
+      : beforeComma + "," + encodeURIComponent(afterComma);
+
+    return { url: src, type: mimeType };
+  }
+
+  // Probe the gateway candidates until one answers; the responding
+  // gateway is the one we render from.
+  const candidates = httpCandidates(uri);
+  let chosenUrl = null;
+  let mimeType = null;
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(probeUrl(candidate), { method: "HEAD" });
+      if (response.ok) {
+        chosenUrl = candidate;
+        mimeType = (response.headers.get("Content-Type") || "")
+          .split(";")[0]
+          .trim()
+          .toLowerCase();
+        break;
+      }
+    } catch (_) {
+      /* try the next gateway */
+    }
+  }
+
+  if (!chosenUrl) chosenUrl = candidates[0];
+
+  if (!mimeType || mimeType.endsWith("/octet-stream")) {
+    // Assume interactive HTML if nothing else fits — most generative
+    // pieces are extensionless HTML pages behind a gateway.
+    mimeType = guessMimeFromUrl(chosenUrl) || mimeType || "text/html";
+  }
+
+  // HTML must keep its real origin so its relative scripts/assets resolve;
+  // everything else goes through the proxy for CORS + mixed-content safety.
+  return {
+    url: mimeType === "text/html" ? chosenUrl : wrapWithProxy(chosenUrl),
+    type: mimeType,
+    origin: chosenUrl,
+  };
+};
+
+// Resolve the still + animation pair from a metadata object.
+export const resolveMediaPair = async (metadata) => {
+  let staticUri = null;
+  if (metadata.image) {
+    staticUri = metadata.image;
+  } else if (metadata.image_data) {
+    // image_data is usually raw SVG markup rather than a URI
+    const svg = String(metadata.image_data).trim();
+    staticUri = svg.startsWith("<")
+      ? "data:image/svg+xml;utf8," + svg
+      : svg;
+  }
+
+  const [staticMedia, animMedia] = await Promise.all([
+    staticUri ? resolveMedia(staticUri) : Promise.resolve(null),
+    metadata.animation_url
+      ? resolveMedia(metadata.animation_url)
+      : Promise.resolve(null),
+  ]);
+
+  return { staticMedia, animMedia };
 };
 
 const displayCache = new Map();
@@ -134,10 +292,7 @@ export const getNftDisplay = (nftContract, tokenId) => {
       metadata = await fetchJson(uri);
     }
 
-    const asThumbUrl = (mediaUri) =>
-      mediaUri.startsWith("data:")
-        ? mediaUri
-        : wrapWithProxy(httpCandidates(mediaUri)[0]);
+    const asThumbUrl = (mediaUri) => thumbUrl(mediaUri, 512);
 
     let image = null;
     if (metadata.image) {

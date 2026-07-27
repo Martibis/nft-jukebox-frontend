@@ -4,57 +4,12 @@ import { ethers } from "ethers";
 import JukeBoxTokenABI from "../data/JukeBoxToken.json";
 import NftABI from "../data/Nft.json";
 import ModelViewer from "./ModelViewer";
-import { httpCandidates, wrapWithProxy, fetchJson } from "@/lib/jukebox";
-
-// IPFS gateways frequently report application/octet-stream, so the file
-// extension is often the more trustworthy signal.
-const EXTENSION_MIME = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  avif: "image/avif",
-  svg: "image/svg+xml",
-  mp4: "video/mp4",
-  webm: "video/webm",
-  mov: "video/quicktime",
-  m4v: "video/mp4",
-  ogv: "video/ogg",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  ogg: "audio/ogg",
-  oga: "audio/ogg",
-  flac: "audio/flac",
-  m4a: "audio/mp4",
-  aac: "audio/aac",
-  glb: "model/gltf-binary",
-  gltf: "model/gltf+json",
-  html: "text/html",
-  htm: "text/html",
-  pdf: "application/pdf",
-};
-
-const guessMimeFromUrl = (url) => {
-  try {
-    const pathname = new URL(url).pathname.toLowerCase();
-    const dot = pathname.lastIndexOf(".");
-    if (dot === -1) return null;
-    return EXTENSION_MIME[pathname.slice(dot + 1)] || null;
-  } catch (_) {
-    return null;
-  }
-};
-
-// Reject anything that isn't a real content URI (e.g. javascript: URLs
-// smuggled into metadata).
-const ALLOWED_URI = /^(data:|ipfs:\/\/|ar:\/\/|https?:\/\/)/i;
-
-// Media the browser parses without executing code — safe to show unprompted.
-const isSafeType = (type) =>
-  ["image/", "video/", "audio/", "model/"].some((prefix) =>
-    type.startsWith(prefix)
-  );
+import {
+  fetchJson,
+  thumbUrl,
+  isSafeType,
+  resolveMediaPair,
+} from "@/lib/jukebox";
 
 const animationLabel = (type) => {
   if (type.startsWith("video/")) return "Play video";
@@ -63,9 +18,15 @@ const animationLabel = (type) => {
   return "Run interactive piece";
 };
 
+// Last successfully resolved piece, shown instantly on the next visit while
+// fresh chain data loads (which then overwrites it unconditionally).
+const LAST_PIECE_KEY = "jukebox-last-piece";
+const LAST_PIECE_MAX_BYTES = 800_000; // stay well under localStorage quota
+
 const JukeBoxInterface = ({ autoRefresh = false }) => {
   const contractAddress = "0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4";
   const startBlockRef = useRef(0);
+  const liveLoadedRef = useRef(false); // true once real chain data applied
   const [staticMedia, setStaticMedia] = useState(null); // { url, type }
   const [animMedia, setAnimMedia] = useState(null); // { url, type }
   const [showAnim, setShowAnim] = useState(false);
@@ -179,6 +140,7 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     }
 
     if (!metadata || typeof metadata !== "object") {
+      liveLoadedRef.current = true;
       setStaticMedia(null);
       setAnimMedia(null);
       setShowAnim(false);
@@ -194,24 +156,10 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     // audio, HTML, 3D…) is offered as an explicit option on top of it.
     setShowAnim(false);
 
-    let staticUri = null;
-    if (metadata.image) {
-      staticUri = metadata.image;
-    } else if (metadata.image_data) {
-      // image_data is usually raw SVG markup rather than a URI
-      const svg = String(metadata.image_data).trim();
-      staticUri = svg.startsWith("<")
-        ? "data:image/svg+xml;utf8," + svg
-        : svg;
-    }
+    const { staticMedia: staticM, animMedia: animM } =
+      await resolveMediaPair(metadata);
 
-    const [staticM, animM] = await Promise.all([
-      staticUri ? resolveMedia(staticUri) : Promise.resolve(null),
-      metadata.animation_url
-        ? resolveMedia(metadata.animation_url)
-        : Promise.resolve(null),
-    ]);
-
+    liveLoadedRef.current = true;
     setStaticMedia(staticM);
     setAnimMedia(animM);
 
@@ -227,6 +175,22 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     }
 
     publishNowPlaying({ name: metadata.name || fallbackName });
+
+    // Remember this piece for an instant paint on the next visit
+    if (staticM || animM) {
+      try {
+        const snapshot = JSON.stringify({
+          name: metadata.name || fallbackName,
+          staticMedia: staticM,
+          animMedia: animM,
+        });
+        if (snapshot.length < LAST_PIECE_MAX_BYTES) {
+          localStorage.setItem(LAST_PIECE_KEY, snapshot);
+        }
+      } catch (_) {
+        /* quota or serialization issues — just skip the cache */
+      }
+    }
   };
 
   const fetchPlayer = async (contract) => {
@@ -255,73 +219,15 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     publishNowPlaying({ player: potentialEns || player });
   };
 
-  // Resolve a metadata URI to { url, type }, or null if it can't be trusted.
-  const resolveMedia = async (uri) => {
-    if (typeof uri !== "string" || !ALLOWED_URI.test(uri.trim())) {
-      return null;
-    }
-    uri = uri.trim();
-
-    if (isData(uri)) {
-      const mimeType = (uri.match(/^data:([^;,]*)/)?.[1] || "text/plain")
-        .trim()
-        .toLowerCase();
-
-      const commaIndex = uri.indexOf(",");
-      const beforeComma = uri.substring(0, commaIndex);
-      const afterComma = uri.substring(commaIndex + 1);
-
-      const src = isBase64(uri)
-        ? uri
-        : beforeComma + "," + encodeURIComponent(afterComma);
-
-      return { url: src, type: mimeType };
-    }
-
-    // Probe the gateway candidates until one answers; the responding
-    // gateway is the one we render from.
-    const candidates = httpCandidates(uri);
-    let chosenUrl = null;
-    let mimeType = null;
-
-    for (const candidate of candidates) {
-      try {
-        const response = await fetch(wrapWithProxy(candidate), {
-          method: "HEAD",
-        });
-        if (response.ok) {
-          chosenUrl = candidate;
-          mimeType = (response.headers.get("Content-Type") || "")
-            .split(";")[0]
-            .trim()
-            .toLowerCase();
-          break;
-        }
-      } catch (_) {
-        /* try the next gateway */
-      }
-    }
-
-    if (!chosenUrl) chosenUrl = candidates[0];
-
-    if (!mimeType || mimeType.endsWith("/octet-stream")) {
-      // Assume interactive HTML if nothing else fits — most generative
-      // pieces are extensionless HTML pages behind a gateway.
-      mimeType = guessMimeFromUrl(chosenUrl) || mimeType || "text/html";
-    }
-
-    // HTML must keep its real origin so its relative scripts/assets resolve;
-    // everything else goes through the proxy for CORS + mixed-content safety.
-    return {
-      url: mimeType === "text/html" ? chosenUrl : wrapWithProxy(chosenUrl),
-      type: mimeType,
-    };
-  };
-
   const stillUrl =
     staticMedia && staticMedia.type.startsWith("image/")
       ? staticMedia.url
       : "";
+
+  // The backdrop is blurred to oblivion anyway — a small compressed
+  // rendition looks identical and loads in a fraction of the bytes.
+  const ambientUrl =
+    stillUrl && staticMedia.origin ? thumbUrl(staticMedia.origin, 256) : stillUrl;
 
   const renderContent = (media) => {
     const kind = media.type;
@@ -395,6 +301,72 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
       </p>
     );
   };
+
+  // Paint the last known piece immediately; the chain fetch below replaces
+  // it as soon as real data arrives (or confirms it's the same piece).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAST_PIECE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (!saved || (!saved.staticMedia && !saved.animMedia)) return;
+
+      // Only fill in still-empty state, never overwrite fresh data
+      setStaticMedia((current) => current || saved.staticMedia || null);
+      setAnimMedia((current) => current || saved.animMedia || null);
+      if (saved.name) {
+        setName((current) => current || saved.name);
+        publishNowPlaying({ name: saved.name });
+      }
+      if (
+        !saved.staticMedia &&
+        saved.animMedia &&
+        isSafeType(saved.animMedia.type)
+      ) {
+        setShowAnim(true);
+      }
+    } catch (_) {
+      /* corrupt cache — ignore, the chain fetch will repopulate it */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Server snapshot: gives first-time visitors an instant paint too, and is
+  // fresher than localStorage (CDN-cached ~12s). Live chain data still wins.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch("/api/now-playing");
+        if (!response.ok) return;
+        const snap = await response.json();
+        if (cancelled || liveLoadedRef.current) return;
+        if (!snap || (!snap.staticMedia && !snap.animMedia)) return;
+
+        setStaticMedia(snap.staticMedia || null);
+        setAnimMedia(snap.animMedia || null);
+        setShowAnim(
+          Boolean(
+            !snap.staticMedia &&
+              snap.animMedia &&
+              isSafeType(snap.animMedia.type)
+          )
+        );
+        if (snap.name) {
+          setName(snap.name);
+          publishNowPlaying({ name: snap.name });
+        }
+      } catch (_) {
+        /* snapshot is best-effort */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let provider;
@@ -492,10 +464,10 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
 
   return (
     <div className="nft-renderer">
-      {stillUrl ? (
+      {ambientUrl ? (
         <div
           className="ambient-bg"
-          style={{ backgroundImage: `url("${stillUrl}")` }}
+          style={{ backgroundImage: `url("${ambientUrl}")` }}
         />
       ) : null}
       {active ? (
