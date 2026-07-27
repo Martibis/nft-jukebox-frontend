@@ -34,9 +34,9 @@ const Stage = () => {
     }
   }, [now?.name]);
 
-  // Default on — the per-block check hits the CDN-cached snapshot, not an RPC
+  // Off by default; opt-in persists across visits
   useEffect(() => {
-    setAutoRefresh(localStorage.getItem("jukebox-auto-sync") !== "0");
+    setAutoRefresh(localStorage.getItem("jukebox-auto-sync") === "1");
   }, []);
 
   const toggleAutoRefresh = () => {

@@ -172,6 +172,8 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
       try {
         const snapshot = JSON.stringify({
           name: metadata.name || fallbackName,
+          nftContract,
+          tokenId: tokenIdStr,
           staticMedia: staticM,
           animMedia: animM,
         });
@@ -302,10 +304,19 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
       // Only fill in still-empty state, never overwrite fresh data
       setStaticMedia((current) => current || saved.staticMedia || null);
       setAnimMedia((current) => current || saved.animMedia || null);
-      if (saved.name) {
-        setName((current) => current || saved.name);
-        publishNowPlaying({ name: saved.name });
+      if (saved.name) setName((current) => current || saved.name);
+      if (saved.nftContract) {
+        setNftContract((current) => current || saved.nftContract);
       }
+      if (saved.tokenId) setTokenId((current) => current || saved.tokenId);
+
+      // Publish everything we know so the placard paints with the artwork
+      // instead of waiting for the chain fetch.
+      const detail = {};
+      if (saved.name) detail.name = saved.name;
+      if (saved.nftContract) detail.nftContract = saved.nftContract;
+      if (saved.tokenId) detail.tokenId = saved.tokenId;
+      if (Object.keys(detail).length) publishNowPlaying(detail);
       if (
         !saved.staticMedia &&
         saved.animMedia &&
@@ -341,10 +352,19 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
               isSafeType(snap.animMedia.type)
           )
         );
-        if (snap.name) {
-          setName(snap.name);
-          publishNowPlaying({ name: snap.name });
-        }
+        if (snap.name) setName(snap.name);
+        if (snap.nftContract) setNftContract(snap.nftContract);
+        if (snap.tokenId) setTokenId(snap.tokenId);
+
+        // Push all snapshot facts to the placard at once; the live chain
+        // fetch overwrites them when it lands (e.g. player with its ENS).
+        const detail = {};
+        if (snap.name) detail.name = snap.name;
+        if (snap.nftContract) detail.nftContract = snap.nftContract;
+        if (snap.tokenId) detail.tokenId = snap.tokenId;
+        if (snap.startBlock) detail.startBlock = snap.startBlock;
+        if (snap.player) detail.player = snap.player;
+        if (Object.keys(detail).length) publishNowPlaying(detail);
       } catch (_) {
         /* snapshot is best-effort */
       }

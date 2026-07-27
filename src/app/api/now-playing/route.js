@@ -18,6 +18,7 @@ const contractInterface = new ethers.utils.Interface([
   "function nftContract() view returns (address)",
   "function tokenId() view returns (uint256)",
   "function startBlock() view returns (uint256)",
+  "function player() view returns (address)",
 ]);
 
 async function ethCall(fn) {
@@ -55,12 +56,14 @@ export async function GET() {
   }
 
   try {
-    const [tokenURI, nftContract, tokenId, startBlock] = await Promise.all([
-      ethCall("nowPlaying"),
-      ethCall("nftContract"),
-      ethCall("tokenId"),
-      ethCall("startBlock"),
-    ]);
+    const [tokenURI, nftContract, tokenId, startBlock, player] =
+      await Promise.all([
+        ethCall("nowPlaying"),
+        ethCall("nftContract"),
+        ethCall("tokenId"),
+        ethCall("startBlock"),
+        ethCall("player"),
+      ]);
 
     let metadata = null;
     try {
@@ -88,6 +91,7 @@ export async function GET() {
       nftContract,
       tokenId: tokenId.toString(),
       startBlock: startBlock.toNumber(),
+      player,
       staticMedia,
       animMedia,
     };
