@@ -27,9 +27,12 @@ const PlayButton = ({
   const parseOpenseaUrl = (url) => {
     try {
       const u = new URL(url);
-      // expected pattern: /item/ethereum/<contract>/<tokenId>
+      // Both formats: /item/ethereum/<contract>/<tokenId> (current)
+      // and /assets/ethereum/<contract>/<tokenId> (classic)
       const parts = u.pathname.split("/").filter(Boolean);
-      const idx = parts.findIndex((p) => p.toLowerCase() === "item");
+      const idx = parts.findIndex((p) =>
+        ["item", "assets"].includes(p.toLowerCase())
+      );
 
       if (idx !== -1 && parts[idx + 1]?.toLowerCase() === "ethereum") {
         const contract = parts[idx + 2];
@@ -145,7 +148,7 @@ const PlayButton = ({
 
       if (!parsed) {
         setInfoMessage(
-          "Invalid OpenSea URL. Expected /item/ethereum/<contract>/<tokenId>"
+          "Invalid OpenSea URL. Expected …/ethereum/<contract>/<tokenId>"
         );
         return false;
       }
