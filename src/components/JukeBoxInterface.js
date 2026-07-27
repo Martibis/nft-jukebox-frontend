@@ -91,13 +91,33 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     let freshTimer = null;
 
     const load = (attempt = 0) => {
-      loadSnapshot()
-        .then((snap) => !cancelled && applySnapshot(snap))
-        .catch(() => {
-          if (!cancelled && attempt < 3) {
-            timer = setTimeout(() => load(attempt + 1), 3000 * (attempt + 1));
+      (async () => {
+        const response = await fetch("/api/now-playing");
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const snap = await response.json();
+        if (cancelled || !snap || snap.error) return;
+        applySnapshot(snap);
+
+        // The CDN may have served an expired copy (stale-while-revalidate).
+        // The Age header exposes that — verify once against the origin.
+        const age = parseInt(response.headers.get("age") || "0", 10);
+        if (age > 12) {
+          const freshResponse = await fetch("/api/now-playing?fresh=1", {
+            cache: "no-store",
+          });
+          if (!freshResponse.ok) return;
+          const freshSnap = await freshResponse.json();
+          if (cancelled || !freshSnap || freshSnap.error) return;
+          if (freshSnap.startBlock !== snap.startBlock) {
+            applySnapshot(freshSnap);
+            window.dispatchEvent(new Event("jukebox-plays-changed"));
           }
-        });
+        }
+      })().catch(() => {
+        if (!cancelled && attempt < 3) {
+          timer = setTimeout(() => load(attempt + 1), 3000 * (attempt + 1));
+        }
+      });
     };
     load();
 

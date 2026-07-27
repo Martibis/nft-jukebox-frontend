@@ -399,6 +399,7 @@
     font-family: $monoFont;
     font-size: 0.6rem;
     letter-spacing: 0.08em;
+    line-height: 1.9;
     text-transform: uppercase;
     color: var(--ink-40);
     white-space: nowrap;
@@ -407,9 +408,12 @@
     font-variant-numeric: tabular-nums;
 }
 
+.archive-card .a-meta.accent {
+    color: var(--accent);
+}
+
 .archive-card .a-meta:last-child {
     padding-bottom: 0.8rem;
-    margin-top: 0.15rem;
 }
 
 .load-more {

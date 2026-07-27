@@ -12,6 +12,12 @@ const shortAddress = (value) => {
   return value;
 };
 
+// 19,320 → 19.3K, 2,450,000 → 2.5M — card meta has no room for long numbers
+const compact = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
 const ArchiveCard = ({ entry }) => {
   const [meta, setMeta] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -51,11 +57,21 @@ const ArchiveCard = ({ entry }) => {
       <p className="a-name" title={meta?.name}>
         {meta?.name || (failed ? `#${entry.tokenId}` : "…")}
       </p>
-      <p className="a-meta">
-        {entry.blocksHeld.toLocaleString("en-US")} blocks ·{" "}
-        {entry.earned.toLocaleString("en-US")} $JUKE
+      <p
+        className="a-meta"
+        title={`On view for ${entry.blocksHeld.toLocaleString("en-US")} blocks`}
+      >
+        {compact.format(entry.blocksHeld)} blocks
       </p>
-      <p className="a-meta">by {shortAddress(entry.player)}</p>
+      <p
+        className="a-meta accent"
+        title={`${entry.earned.toLocaleString("en-US")} $JUKE earned`}
+      >
+        {compact.format(entry.earned)} $JUKE
+      </p>
+      <p className="a-meta" title={entry.player}>
+        by {shortAddress(entry.player)}
+      </p>
     </a>
   );
 };
@@ -67,8 +83,32 @@ const Archive = () => {
   useEffect(() => {
     let cancelled = false;
     let timer = null;
+    let newestKnown = 0; // startBlock of the newest play in our list
+    let stageStart = 0; // startBlock the stage says is current
+    let syncedFor = 0; // guard: one fresh refetch per detected mismatch
+
+    // The CDN can serve a stale play list right after a stage change; the
+    // stage snapshot tells us the current startBlock, so a list that
+    // doesn't contain it yet is stale — refetch past the CDN once.
+    const maybeSync = () => {
+      if (
+        !stageStart ||
+        !newestKnown ||
+        stageStart <= newestKnown ||
+        syncedFor === stageStart
+      ) {
+        return;
+      }
+      syncedFor = stageStart;
+      refreshPlays()
+        .then((plays) => !cancelled && apply(plays))
+        .catch(() => {
+          /* keep the current list */
+        });
+    };
 
     const apply = (plays) => {
+      newestKnown = plays.length ? plays[plays.length - 1].startBlock : 0;
       // Every play except the current one (last), most recent first.
       // Blocks held = until the next play's start block.
       const previous = plays.slice(0, -1).map((play, i) => ({
@@ -77,7 +117,18 @@ const Archive = () => {
         earned: 120 * (plays[i + 1].startBlock - play.startBlock),
       }));
       setEntries(previous.reverse());
+      maybeSync();
     };
+
+    // Track what the stage says is current (published by JukeBoxInterface)
+    const onNowPlaying = (e) => {
+      const startBlock = e?.detail?.startBlock;
+      if (startBlock && startBlock > stageStart) {
+        stageStart = startBlock;
+        maybeSync();
+      }
+    };
+    window.addEventListener("now-playing", onNowPlaying);
 
     // A transient /api/plays failure shouldn't hide the archive for the
     // whole session — retry a few times with backoff before giving up.
@@ -110,6 +161,7 @@ const Archive = () => {
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      window.removeEventListener("now-playing", onNowPlaying);
       window.removeEventListener("jukebox-plays-changed", onStageChange);
     };
   }, []);

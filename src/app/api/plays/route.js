@@ -18,7 +18,7 @@ export async function GET(request) {
       headers: {
         "Cache-Control": fresh
           ? "no-store"
-          : "public, s-maxage=12, stale-while-revalidate=600",
+          : "public, s-maxage=12, stale-while-revalidate=120",
       },
     });
   } catch (error) {
