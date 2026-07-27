@@ -49,6 +49,16 @@ async function proxy(request, method) {
     headers.delete("content-length");
     headers.delete("Content-Length");
 
+    // IPFS / Arweave content is content-addressed and can never change, so
+    // browsers and the CDN can cache it forever.
+    if (
+      upstreamResponse.ok &&
+      (/\/ipfs\//i.test(url.toString()) ||
+        /(^|\.)arweave\.net$/i.test(url.hostname))
+    ) {
+      headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    }
+
     if (method === "HEAD") {
       return new Response(null, {
         status: upstreamResponse.status,

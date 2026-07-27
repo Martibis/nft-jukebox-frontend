@@ -219,13 +219,17 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     publishNowPlaying({ player: potentialEns || player });
   };
 
+  // Stage rendition: ~1024px WebP via the compression endpoint. At display
+  // size it's visually identical to the original at a fraction of the bytes
+  // (the endpoint falls back to the original for SVG etc.).
   const stillUrl =
     staticMedia && staticMedia.type.startsWith("image/")
-      ? staticMedia.url
+      ? staticMedia.origin
+        ? thumbUrl(staticMedia.origin, 1024)
+        : staticMedia.url
       : "";
 
-  // The backdrop is blurred to oblivion anyway — a small compressed
-  // rendition looks identical and loads in a fraction of the bytes.
+  // The backdrop is blurred to oblivion anyway — a tiny rendition suffices.
   const ambientUrl =
     stillUrl && staticMedia.origin ? thumbUrl(staticMedia.origin, 256) : stillUrl;
 
@@ -234,7 +238,10 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
 
     if (kind.startsWith("image/")) {
       return (
-        <img src={media.url} alt={name || "NFT artwork currently on view"} />
+        <img
+          src={media.origin ? thumbUrl(media.origin, 1024) : media.url}
+          alt={name || "NFT artwork currently on view"}
+        />
       );
     }
 
