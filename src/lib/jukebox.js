@@ -2,15 +2,39 @@ import { ethers } from "ethers";
 
 export const JUKE_TOKEN = "0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4";
 
-// Free public RPCs, in order of preference. The old Infura key is kept last
-// as a hail-mary — it has been observed returning "Internal error".
+// Free public RPCs, in order of preference. Anything shipped to the browser
+// is public by definition, so no keyed endpoints belong in this list.
 export const RPC_URLS = [
   "https://ethereum-rpc.publicnode.com",
   "https://eth.drpc.org",
   "https://1rpc.io/eth",
   "https://cloudflare-eth.com",
-  "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c",
 ];
+
+// Server-side RPC list: a private keyed endpoint (e.g. Infura/Alchemy) from
+// the environment gets top priority, public RPCs remain as fallback.
+export const serverRpcUrls = () =>
+  [process.env.ETHEREUM_RPC_URL, ...RPC_URLS].filter(Boolean);
+
+// Server-side JSON-RPC request. Sends an Origin header so origin-allowlisted
+// keys accept calls from our API routes (server fetches carry none by
+// default; Node's fetch allows setting it, unlike browsers).
+export const rpcRequest = async (rpcUrl, method, params) => {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "https://nftjukebox.app",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    cache: "no-store",
+  });
+  const json = await response.json();
+  if (json.error) {
+    throw new Error(json.error.message || "RPC error");
+  }
+  return json.result;
+};
 
 const MAINNET = { name: "homestead", chainId: 1 };
 

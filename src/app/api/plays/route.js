@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
-import { JUKE_TOKEN, RPC_URLS } from "@/lib/jukebox";
+import { JUKE_TOKEN, serverRpcUrls, rpcRequest } from "@/lib/jukebox";
 
 export const dynamic = "force-dynamic";
 
@@ -8,10 +8,11 @@ const DEPLOY_BLOCK = 18661907;
 
 const playInterface = new ethers.utils.Interface([
   "event NFTPlayed(address indexed player, address indexed nftContract, uint256 indexed tokenId, uint256 startBlock)",
+  "function startBlock() view returns (uint256)",
 ]);
 const PLAY_TOPIC = playInterface.getEventTopic("NFTPlayed");
 
-const TTL_MS = 60_000;
+const SOFT_TTL_MS = 30_000;
 let cache = null; // { at, data }
 
 const respond = (data) =>
@@ -54,33 +55,55 @@ async function fromBlockscout() {
   return parseLogs(json.result);
 }
 
-// Last resort: try the raw log query on each RPC (most free ones refuse
-// the range, but a healthy paid/archival endpoint in the list would work).
+// Raw log query over the full range. Free public RPCs refuse it, but a
+// keyed endpoint (ETHEREUM_RPC_URL) handles it fine.
 async function fromRpc() {
   let lastError = null;
-  for (const rpc of RPC_URLS) {
+  for (const rpc of serverRpcUrls()) {
     try {
-      const response = await fetch(rpc, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "eth_getLogs",
-          params: [
-            {
-              address: JUKE_TOKEN,
-              fromBlock: "0x" + DEPLOY_BLOCK.toString(16),
-              toBlock: "latest",
-              topics: [PLAY_TOPIC],
-            },
-          ],
-        }),
-        cache: "no-store",
-      });
-      const json = await response.json();
-      if (json.error) throw new Error(json.error.message);
-      return parseLogs(json.result);
+      const logs = await rpcRequest(rpc, "eth_getLogs", [
+        {
+          address: JUKE_TOKEN,
+          fromBlock: "0x" + DEPLOY_BLOCK.toString(16),
+          toBlock: "latest",
+          topics: [PLAY_TOPIC],
+        },
+      ]);
+      return parseLogs(logs);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("All RPCs failed");
+}
+
+async function fetchPlays() {
+  // With a keyed endpoint configured, query the chain directly and keep
+  // Blockscout as backup; without one, Blockscout is the only source that
+  // serves the full history for free.
+  const order = process.env.ETHEREUM_RPC_URL
+    ? [fromRpc, fromBlockscout]
+    : [fromBlockscout, fromRpc];
+  try {
+    return await order[0]();
+  } catch (_) {
+    return await order[1]();
+  }
+}
+
+// One cheap eth_call to the contract's startBlock(): if it still matches the
+// latest cached play, no new play has happened and the cache stays valid.
+async function currentStartBlock() {
+  let lastError = null;
+  for (const rpc of serverRpcUrls()) {
+    try {
+      const result = await rpcRequest(rpc, "eth_call", [
+        { to: JUKE_TOKEN, data: playInterface.encodeFunctionData("startBlock") },
+        "latest",
+      ]);
+      return playInterface
+        .decodeFunctionResult("startBlock", result)[0]
+        .toNumber();
     } catch (error) {
       lastError = error;
     }
@@ -89,18 +112,28 @@ async function fromRpc() {
 }
 
 export async function GET() {
-  if (cache && Date.now() - cache.at < TTL_MS) {
+  const now = Date.now();
+  if (cache && now - cache.at < SOFT_TTL_MS) {
     return respond(cache.data);
   }
 
-  try {
-    let data;
+  // Conditional invalidation: only re-run the full log query when the
+  // on-chain state actually changed.
+  if (cache && cache.data.length) {
     try {
-      data = await fromBlockscout();
+      const latest = cache.data[cache.data.length - 1].startBlock;
+      if ((await currentStartBlock()) === latest) {
+        cache.at = now;
+        return respond(cache.data);
+      }
     } catch (_) {
-      data = await fromRpc();
+      // fall through to a full refresh
     }
-    cache = { at: Date.now(), data };
+  }
+
+  try {
+    const data = await fetchPlays();
+    cache = { at: now, data };
     return respond(data);
   } catch (error) {
     console.error("plays fetch failed:", error);

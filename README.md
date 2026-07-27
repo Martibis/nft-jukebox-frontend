@@ -36,8 +36,19 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000). A production build is
 `npm run build && npm start`.
 
-Reading the chain works without a wallet (falls back to a public RPC); playing
+Reading the chain works without a wallet (falls back to public RPCs); playing
 an NFT requires MetaMask on Ethereum mainnet.
+
+### Environment (optional)
+
+Everything runs with zero configuration on free public RPCs. For more
+reliable server-side reads you can provide a private keyed endpoint — it is
+only ever used by the API routes and never shipped to the browser:
+
+```bash
+# .env.local
+ETHEREUM_RPC_URL=https://mainnet.infura.io/v3/YOUR_KEY
+```
 
 ## Stack
 

@@ -356,17 +356,16 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // NOTE: deliberately no contract.on("NFTPlayed") subscription — ethers v5
+  // implements it by polling the RPC every 4 seconds (~1,800 requests/hour
+  // per open tab). Stage changes are detected via the CDN-cached snapshot
+  // poll below instead, which costs no RPC calls at all.
   useEffect(() => {
     const contract = new ethers.Contract(
       contractAddress,
       JukeBoxTokenABI,
       getReadProvider()
     );
-
-    contract.on("NFTPlayed", async () => {
-      await fetchNowPlaying(contract);
-      await fetchPlayer(contract);
-    });
 
     fetchNowPlaying(contract);
     fetchPlayer(contract);
@@ -379,14 +378,14 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     window.addEventListener("jukebox-refresh", refresh);
 
     return () => {
-      contract.removeAllListeners("NFTPlayed");
       window.removeEventListener("jukebox-refresh", refresh);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-sync: once per block (~12s), cheaply check whether the stage changed
-  // and only then do a full refetch.
+  // Auto-sync: once per block (~12s), ask the server snapshot whether the
+  // stage changed hands. The response comes from the CDN/server cache, so an
+  // idle tab makes zero RPC calls; a full refetch happens only on a change.
   useEffect(() => {
     if (!autoRefresh) return;
 
@@ -398,17 +397,19 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
 
     const intervalId = setInterval(async () => {
       try {
-        const startBlock = await contract.startBlock();
-        const startBlockNumber =
-          typeof startBlock?.toNumber === "function"
-            ? startBlock.toNumber()
-            : Number(startBlock);
-        if (startBlockNumber !== startBlockRef.current) {
+        const response = await fetch("/api/now-playing");
+        if (!response.ok) return;
+        const snap = await response.json();
+        if (
+          snap?.startBlock &&
+          startBlockRef.current &&
+          snap.startBlock !== startBlockRef.current
+        ) {
           await fetchNowPlaying(contract);
           await fetchPlayer(contract);
         }
       } catch (_) {
-        /* transient RPC error — try again next block */
+        /* transient error — try again next block */
       }
     }, 12000);
 
