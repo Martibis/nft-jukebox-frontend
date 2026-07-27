@@ -9,6 +9,7 @@ import {
   thumbUrl,
   isSafeType,
   resolveMediaPair,
+  getReadProvider,
 } from "@/lib/jukebox";
 
 const animationLabel = (type) => {
@@ -62,17 +63,7 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
   };
 
   const fetchNowPlaying = async (contract) => {
-    let provider;
-
-    if (typeof window.ethereum !== "undefined") {
-      // If window.ethereum is available, use Web3Provider
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-    } else {
-      // If window.ethereum is not available, use Infura
-      provider = new ethers.providers.JsonRpcProvider(
-        "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c"
-      );
-    }
+    const provider = getReadProvider();
 
     const tokenURI = await contract.nowPlaying();
     const nftContract = await contract.nftContract();
@@ -194,17 +185,7 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
   };
 
   const fetchPlayer = async (contract) => {
-    let provider;
-
-    if (typeof window.ethereum !== "undefined") {
-      // If window.ethereum is available, use Web3Provider
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-    } else {
-      // If window.ethereum is not available, use Infura
-      provider = new ethers.providers.JsonRpcProvider(
-        "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c"
-      );
-    }
+    const provider = getReadProvider();
 
     const player = await contract.player();
 
@@ -376,22 +357,10 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
   }, []);
 
   useEffect(() => {
-    let provider;
-
-    if (typeof window.ethereum !== "undefined") {
-      // If window.ethereum is available, use Web3Provider
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-    } else {
-      // If window.ethereum is not available, use Infura
-      provider = new ethers.providers.JsonRpcProvider(
-        "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c"
-      );
-    }
-
     const contract = new ethers.Contract(
       contractAddress,
       JukeBoxTokenABI,
-      provider
+      getReadProvider()
     );
 
     contract.on("NFTPlayed", async () => {
@@ -421,18 +390,10 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
   useEffect(() => {
     if (!autoRefresh) return;
 
-    let provider;
-    if (typeof window.ethereum !== "undefined") {
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-    } else {
-      provider = new ethers.providers.JsonRpcProvider(
-        "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c"
-      );
-    }
     const contract = new ethers.Contract(
       contractAddress,
       JukeBoxTokenABI,
-      provider
+      getReadProvider()
     );
 
     const intervalId = setInterval(async () => {

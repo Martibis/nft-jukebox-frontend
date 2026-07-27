@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ethers } from "ethers";
 import {
   JUKE_TOKEN,
-  RPC_URL,
+  RPC_URLS,
   fetchJson,
   resolveMediaPair,
 } from "@/lib/jukebox";
@@ -20,23 +20,31 @@ const contractInterface = new ethers.utils.Interface([
 ]);
 
 async function ethCall(fn) {
-  const response = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "eth_call",
-      params: [
-        { to: JUKE_TOKEN, data: contractInterface.encodeFunctionData(fn) },
-        "latest",
-      ],
-    }),
-    cache: "no-store",
-  });
-  const json = await response.json();
-  if (json.error) throw new Error(json.error.message);
-  return contractInterface.decodeFunctionResult(fn, json.result)[0];
+  let lastError = null;
+  for (const rpc of RPC_URLS) {
+    try {
+      const response = await fetch(rpc, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_call",
+          params: [
+            { to: JUKE_TOKEN, data: contractInterface.encodeFunctionData(fn) },
+            "latest",
+          ],
+        }),
+        cache: "no-store",
+      });
+      const json = await response.json();
+      if (json.error) throw new Error(json.error.message);
+      return contractInterface.decodeFunctionResult(fn, json.result)[0];
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("All RPCs failed");
 }
 
 // Snapshot of the piece currently on stage, so every visitor (including

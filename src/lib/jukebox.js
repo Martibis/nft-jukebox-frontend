@@ -2,48 +2,52 @@ import { ethers } from "ethers";
 
 export const JUKE_TOKEN = "0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4";
 
-export const RPC_URL =
-  "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c";
+// Free public RPCs, in order of preference. The old Infura key is kept last
+// as a hail-mary — it has been observed returning "Internal error".
+export const RPC_URLS = [
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.drpc.org",
+  "https://1rpc.io/eth",
+  "https://cloudflare-eth.com",
+  "https://mainnet.infura.io/v3/bc8d2aba81be4f1b9d33bf7af8989a3c",
+];
+
+const MAINNET = { name: "homestead", chainId: 1 };
 
 let readProvider = null;
 
-// Read-only provider: the user's wallet when available, public RPC otherwise.
+// Read-only provider: the user's wallet when available, otherwise a
+// fallback across public RPCs so one dead endpoint can't blank the site.
 export const getReadProvider = () => {
   if (!readProvider) {
-    readProvider =
-      typeof window !== "undefined" && window.ethereum
-        ? new ethers.providers.Web3Provider(window.ethereum)
-        : new ethers.providers.JsonRpcProvider(RPC_URL);
+    if (typeof window !== "undefined" && window.ethereum) {
+      readProvider = new ethers.providers.Web3Provider(window.ethereum);
+    } else {
+      readProvider = new ethers.providers.FallbackProvider(
+        RPC_URLS.map((url, index) => ({
+          provider: new ethers.providers.StaticJsonRpcProvider(url, MAINNET),
+          priority: index + 1,
+          weight: 1,
+          stallTimeout: 2500,
+        })),
+        1 // quorum of one: first healthy answer wins
+      );
+    }
   }
   return readProvider;
 };
 
-const PLAY_EVENT_ABI =
-  "event NFTPlayed(address indexed player, address indexed nftContract, uint256 indexed tokenId, uint256 startBlock)";
-const playInterface = new ethers.utils.Interface([PLAY_EVENT_ABI]);
-
 let playsPromise = null;
 
 // Every play ever, oldest first: { player, nftContract, tokenId, startBlock }.
-// Fetched once per page load and shared by all consumers.
+// Served by /api/plays (free RPCs can't handle the multi-million-block
+// getLogs range, so the server queries an indexer and caches the result).
 export const getPlays = () => {
   if (!playsPromise) {
     playsPromise = (async () => {
-      const logs = await getReadProvider().getLogs({
-        address: JUKE_TOKEN,
-        fromBlock: 0,
-        toBlock: "latest",
-        topics: [playInterface.getEventTopic("NFTPlayed")],
-      });
-      return logs.map((log) => {
-        const args = playInterface.parseLog(log).args;
-        return {
-          player: args.player,
-          nftContract: args.nftContract,
-          tokenId: args.tokenId.toString(),
-          startBlock: args.startBlock.toNumber(),
-        };
-      });
+      const response = await fetch("/api/plays");
+      if (!response.ok) throw new Error("Plays fetch failed");
+      return await response.json();
     })();
     playsPromise.catch(() => {
       playsPromise = null; // allow a retry on failure
