@@ -39,6 +39,19 @@ const Stage = () => {
     setAutoRefresh(localStorage.getItem("jukebox-auto-sync") === "1");
   }, []);
 
+  // Tick the block counter locally (~12s per block); snapshot polls
+  // overwrite any drift when auto-sync is on.
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setNow((prev) =>
+        prev?.currentBlock
+          ? { ...prev, currentBlock: prev.currentBlock + 1 }
+          : prev
+      );
+    }, 12000);
+    return () => clearInterval(intervalId);
+  }, []);
+
   const toggleAutoRefresh = () => {
     setAutoRefresh((prev) => {
       localStorage.setItem("jukebox-auto-sync", prev ? "0" : "1");
@@ -83,7 +96,7 @@ const Stage = () => {
             type="button"
             className={"tool-btn" + (autoRefresh ? " active" : "")}
             onClick={toggleAutoRefresh}
-            title="Re-check the stage every block (~12s)"
+            title="Re-check the stage every few seconds (served from cache, no chain calls)"
           >
             Auto-sync {autoRefresh ? "on" : "off"}
           </button>

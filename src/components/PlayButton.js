@@ -221,6 +221,8 @@ const PlayButton = ({
       );
       await tx.wait(); // Wait for the transaction to be mined
       setInfoMessage("Your NFT is on stage.");
+      // Tell the stage to pull the post-transaction state immediately
+      window.dispatchEvent(new Event("jukebox-staged"));
     } catch (error) {
       console.error("Error playing NFT:", error);
       setInfoMessage("Failed to play NFT");

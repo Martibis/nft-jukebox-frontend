@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { getPlays, getNftDisplay } from "@/lib/jukebox";
+import { getPlays, refreshPlays, getNftDisplay } from "@/lib/jukebox";
 
 const PAGE_SIZE = 6;
 
@@ -67,22 +67,24 @@ const Archive = () => {
   useEffect(() => {
     let cancelled = false;
     let timer = null;
+    let changeTimer = null;
+
+    const apply = (plays) => {
+      // Every play except the current one (last), most recent first.
+      // Blocks held = until the next play's start block.
+      const previous = plays.slice(0, -1).map((play, i) => ({
+        ...play,
+        blocksHeld: plays[i + 1].startBlock - play.startBlock,
+        earned: 120 * (plays[i + 1].startBlock - play.startBlock),
+      }));
+      setEntries(previous.reverse());
+    };
 
     // A transient /api/plays failure shouldn't hide the archive for the
     // whole session — retry a few times with backoff before giving up.
     const load = (attempt = 0) => {
       getPlays()
-        .then((plays) => {
-          if (cancelled) return;
-          // Every play except the current one (last), most recent first.
-          // Blocks held = until the next play's start block.
-          const previous = plays.slice(0, -1).map((play, i) => ({
-            ...play,
-            blocksHeld: plays[i + 1].startBlock - play.startBlock,
-            earned: 120 * (plays[i + 1].startBlock - play.startBlock),
-          }));
-          setEntries(previous.reverse());
-        })
+        .then((plays) => !cancelled && apply(plays))
         .catch(() => {
           if (cancelled) return;
           if (attempt < 3) {
@@ -94,9 +96,25 @@ const Archive = () => {
     };
     load();
 
+    // When the stage changes hands, the finished piece belongs in the
+    // archive. Small delay lets the CDN pick up the fresh list first.
+    const onStageChange = () => {
+      clearTimeout(changeTimer);
+      changeTimer = setTimeout(() => {
+        refreshPlays()
+          .then((plays) => !cancelled && apply(plays))
+          .catch(() => {
+            /* keep the current list */
+          });
+      }, 2500);
+    };
+    window.addEventListener("jukebox-plays-changed", onStageChange);
+
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      clearTimeout(changeTimer);
+      window.removeEventListener("jukebox-plays-changed", onStageChange);
     };
   }, []);
 

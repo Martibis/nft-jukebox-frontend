@@ -1,16 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 
-import { ethers } from "ethers";
-import JukeBoxTokenABI from "../data/JukeBoxToken.json";
-import NftABI from "../data/Nft.json";
 import ModelViewer from "./ModelViewer";
-import {
-  fetchJson,
-  thumbUrl,
-  isSafeType,
-  resolveMediaPair,
-  getReadProvider,
-} from "@/lib/jukebox";
+import { thumbUrl, isSafeType } from "@/lib/jukebox";
+
+// Renders the piece on stage. All data comes from /api/now-playing (the
+// server-side stage cache) — the browser makes zero chain calls here.
 
 const animationLabel = (type) => {
   if (type.startsWith("video/")) return "Play video";
@@ -20,25 +14,20 @@ const animationLabel = (type) => {
 };
 
 // Last successfully resolved piece, shown instantly on the next visit while
-// fresh chain data loads (which then overwrites it unconditionally).
+// the fresh snapshot loads (which then overwrites it).
 const LAST_PIECE_KEY = "jukebox-last-piece";
 const LAST_PIECE_MAX_BYTES = 800_000; // stay well under localStorage quota
 
 const JukeBoxInterface = ({ autoRefresh = false }) => {
-  const contractAddress = "0xEb01299cd6C93E1030280234E4Cd62E2fe7F8ad4";
   const startBlockRef = useRef(0);
-  const liveLoadedRef = useRef(false); // true once real chain data applied
+  const liveLoadedRef = useRef(false); // true once a real snapshot applied
   const [staticMedia, setStaticMedia] = useState(null); // { url, type }
   const [animMedia, setAnimMedia] = useState(null); // { url, type }
   const [showAnim, setShowAnim] = useState(false);
   const [mediaFailed, setMediaFailed] = useState(false);
   const [name, setName] = useState("");
   const [nftContract, setNftContract] = useState("");
-  const [player, setPlayer] = useState("");
-  const [owner, setOwner] = useState("");
-  const [startBlock, setStartBlock] = useState(0);
-  const [currentBlock, setCurrentBlock] = useState(0);
-  const [tokenId, setTokenId] = useState(0);
+  const [tokenId, setTokenId] = useState("");
 
   const publishNowPlaying = (update) => {
     try {
@@ -48,137 +37,52 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     }
   };
 
-  function isData(str) {
-    const dataRegex = /^data:(.*)$/;
-    return dataRegex.test(str);
-  }
-
-  function isBase64(str) {
-    const base64Regex = /^data:(.*?);base64,(.*)$/;
-    return base64Regex.test(str);
-  }
-
-  const increaseCurrentBlock = () => {
-    setCurrentBlock((prevBlock) => prevBlock + 1);
-  };
-
-  const fetchNowPlaying = async (contract) => {
-    const provider = getReadProvider();
-
-    const tokenURI = await contract.nowPlaying();
-    const nftContract = await contract.nftContract();
-    const tokenId = await contract.tokenId();
-    const startBlock = await contract.startBlock();
-    let currentBlock = await provider.getBlockNumber();
-    console.log(currentBlock);
-    setCurrentBlock(currentBlock);
-    setStartBlock(startBlock);
-    setNftContract(nftContract);
-    setTokenId(tokenId);
-
-    // Publish chain-level facts immediately so the placard never hangs on a
-    // slow or broken metadata fetch.
-    const startBlockNumber =
-      typeof startBlock?.toNumber === "function"
-        ? startBlock.toNumber()
-        : Number(startBlock);
-    startBlockRef.current = startBlockNumber;
-
-    const tokenIdStr = tokenId?.toString ? tokenId.toString() : String(tokenId);
+  const applySnapshot = (snap) => {
+    const tokenIdStr = snap.tokenId != null ? String(snap.tokenId) : "";
     const fallbackName =
       "Token #" +
       (tokenIdStr.length > 10 ? tokenIdStr.slice(0, 6) + "…" : tokenIdStr);
-
-    publishNowPlaying({
-      nftContract,
-      tokenId: tokenIdStr,
-      startBlock: startBlockNumber,
-      currentBlock,
-    });
-
-    // ERC-721 only — ERC-1155 has no ownerOf, and ENS lookups can fail too
-    try {
-      const nftContractConnected = new ethers.Contract(
-        nftContract,
-        NftABI,
-        provider
-      );
-      const owner = await nftContractConnected.ownerOf(tokenId);
-      const potentialEns = await provider.lookupAddress(owner);
-      setOwner(potentialEns || owner);
-    } catch (_) {
-      setOwner("");
-    }
-
-    setMediaFailed(false);
-
-    let metadata = null;
-
-    try {
-      if (isData(tokenURI)) {
-        const commaIndex = tokenURI.indexOf(",");
-        const afterComma = tokenURI.substring(commaIndex + 1);
-
-        const decoded = isBase64(tokenURI) ? atob(afterComma) : afterComma;
-
-        metadata = JSON.parse(decoded);
-      } else {
-        // Walks all configured IPFS gateways before giving up
-        metadata = await fetchJson(tokenURI);
-      }
-    } catch (error) {
-      console.error("Error fetching token metadata:", error);
-    }
-
-    if (!metadata || typeof metadata !== "object") {
-      liveLoadedRef.current = true;
-      setStaticMedia(null);
-      setAnimMedia(null);
-      setShowAnim(false);
-      setMediaFailed(true);
-      setName(fallbackName);
-      publishNowPlaying({ name: fallbackName });
-      return;
-    }
-
-    setName(metadata.name || fallbackName);
-
-    // The still image is always the default view; the animation (video,
-    // audio, HTML, 3D…) is offered as an explicit option on top of it.
-    setShowAnim(false);
-
-    const { staticMedia: staticM, animMedia: animM } =
-      await resolveMediaPair(metadata);
+    const pieceName = snap.name || fallbackName;
 
     liveLoadedRef.current = true;
-    setStaticMedia(staticM);
-    setAnimMedia(animM);
+    startBlockRef.current = snap.startBlock || 0;
 
-    // Metadata resolved but nothing renderable in it
-    if (!staticM && !animM) {
-      setMediaFailed(true);
-    }
+    setName(pieceName);
+    setNftContract(snap.nftContract || "");
+    setTokenId(tokenIdStr);
+    setStaticMedia(snap.staticMedia || null);
+    setAnimMedia(snap.animMedia || null);
+    setMediaFailed(!snap.staticMedia && !snap.animMedia);
+    // Still image is the default view; code-free media (video/audio/3D) may
+    // play directly when there's no still. HTML always stays behind a click.
+    setShowAnim(
+      Boolean(
+        !snap.staticMedia && snap.animMedia && isSafeType(snap.animMedia.type)
+      )
+    );
 
-    // No still to fall back on: show the animation directly, but only if
-    // it's a media type that can't execute code. HTML stays behind a click.
-    if (!staticM && animM && isSafeType(animM.type)) {
-      setShowAnim(true);
-    }
-
-    publishNowPlaying({ name: metadata.name || fallbackName });
+    const detail = { name: pieceName };
+    if (snap.nftContract) detail.nftContract = snap.nftContract;
+    if (tokenIdStr) detail.tokenId = tokenIdStr;
+    if (snap.startBlock) detail.startBlock = snap.startBlock;
+    if (snap.player) detail.player = snap.player;
+    if (snap.currentBlock) detail.currentBlock = snap.currentBlock;
+    publishNowPlaying(detail);
 
     // Remember this piece for an instant paint on the next visit
-    if (staticM || animM) {
+    if (snap.staticMedia || snap.animMedia) {
       try {
-        const snapshot = JSON.stringify({
-          name: metadata.name || fallbackName,
-          nftContract,
+        const saved = JSON.stringify({
+          name: pieceName,
+          nftContract: snap.nftContract,
           tokenId: tokenIdStr,
-          staticMedia: staticM,
-          animMedia: animM,
+          startBlock: snap.startBlock,
+          player: snap.player,
+          staticMedia: snap.staticMedia,
+          animMedia: snap.animMedia,
         });
-        if (snapshot.length < LAST_PIECE_MAX_BYTES) {
-          localStorage.setItem(LAST_PIECE_KEY, snapshot);
+        if (saved.length < LAST_PIECE_MAX_BYTES) {
+          localStorage.setItem(LAST_PIECE_KEY, saved);
         }
       } catch (_) {
         /* quota or serialization issues — just skip the cache */
@@ -186,21 +90,133 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
     }
   };
 
-  const fetchPlayer = async (contract) => {
-    const provider = getReadProvider();
-
-    const player = await contract.player();
-
-    let potentialEns = await provider.lookupAddress(player);
-
-    if (potentialEns) {
-      setPlayer(potentialEns);
-    } else {
-      setPlayer(player);
-    }
-
-    publishNowPlaying({ player: potentialEns || player });
+  const loadSnapshot = async () => {
+    const response = await fetch("/api/now-playing");
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    const snap = await response.json();
+    if (!snap || snap.error) throw new Error("bad snapshot");
+    return snap;
   };
+
+  // Paint the last known piece immediately; the snapshot fetch below
+  // replaces it as soon as fresh data arrives.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAST_PIECE_KEY);
+      if (!raw || liveLoadedRef.current) return;
+      const saved = JSON.parse(raw);
+      if (!saved || (!saved.staticMedia && !saved.animMedia)) return;
+
+      setStaticMedia((current) => current || saved.staticMedia || null);
+      setAnimMedia((current) => current || saved.animMedia || null);
+      if (saved.name) setName((current) => current || saved.name);
+      if (saved.nftContract) {
+        setNftContract((current) => current || saved.nftContract);
+      }
+      if (saved.tokenId) setTokenId((current) => current || saved.tokenId);
+      if (
+        !saved.staticMedia &&
+        saved.animMedia &&
+        isSafeType(saved.animMedia.type)
+      ) {
+        setShowAnim(true);
+      }
+
+      const detail = {};
+      if (saved.name) detail.name = saved.name;
+      if (saved.nftContract) detail.nftContract = saved.nftContract;
+      if (saved.tokenId) detail.tokenId = saved.tokenId;
+      if (saved.player) detail.player = saved.player;
+      if (Object.keys(detail).length) publishNowPlaying(detail);
+    } catch (_) {
+      /* corrupt cache — ignore, the snapshot will repopulate it */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Initial snapshot (with retries) + manual refresh from the stage toolbar.
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    let freshTimer = null;
+
+    const load = (attempt = 0) => {
+      loadSnapshot()
+        .then((snap) => !cancelled && applySnapshot(snap))
+        .catch(() => {
+          if (!cancelled && attempt < 3) {
+            timer = setTimeout(() => load(attempt + 1), 3000 * (attempt + 1));
+          }
+        });
+    };
+    load();
+
+    const refresh = () => load();
+    window.addEventListener("jukebox-refresh", refresh);
+
+    // A play just confirmed in this tab: bypass all caches and re-poll
+    // until the server state reflects the new piece.
+    const syncFresh = async (attempt = 0) => {
+      try {
+        const response = await fetch("/api/now-playing?fresh=1", {
+          cache: "no-store",
+        });
+        if (response.ok) {
+          const snap = await response.json();
+          if (cancelled || !snap || snap.error) return;
+          if (snap.startBlock && snap.startBlock !== startBlockRef.current) {
+            applySnapshot(snap);
+            window.dispatchEvent(new Event("jukebox-plays-changed"));
+            return;
+          }
+        }
+      } catch (_) {
+        /* retry below */
+      }
+      if (!cancelled && attempt < 5) {
+        freshTimer = setTimeout(() => syncFresh(attempt + 1), 2000);
+      }
+    };
+    const onStaged = () => syncFresh();
+    window.addEventListener("jukebox-staged", onStaged);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      clearTimeout(freshTimer);
+      window.removeEventListener("jukebox-refresh", refresh);
+      window.removeEventListener("jukebox-staged", onStaged);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-sync: poll the cached snapshot every 4s (a CDN/server-cache hit —
+  // zero chain calls from the browser). Only a changed startBlock triggers
+  // a repaint, so a running animation is never interrupted.
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const snap = await loadSnapshot();
+        if (snap.currentBlock) {
+          publishNowPlaying({ currentBlock: snap.currentBlock });
+        }
+        if (
+          snap.startBlock &&
+          snap.startBlock !== startBlockRef.current
+        ) {
+          applySnapshot(snap);
+          window.dispatchEvent(new Event("jukebox-plays-changed"));
+        }
+      } catch (_) {
+        /* transient error — try again next tick */
+      }
+    }, 4000);
+
+    return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh]);
 
   // Stage rendition: ~1024px WebP via the compression endpoint. At display
   // size it's visually identical to the original at a fraction of the bytes
@@ -291,163 +307,6 @@ const JukeBoxInterface = ({ autoRefresh = false }) => {
       </p>
     );
   };
-
-  // Paint the last known piece immediately; the chain fetch below replaces
-  // it as soon as real data arrives (or confirms it's the same piece).
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LAST_PIECE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw);
-      if (!saved || (!saved.staticMedia && !saved.animMedia)) return;
-
-      // Only fill in still-empty state, never overwrite fresh data
-      setStaticMedia((current) => current || saved.staticMedia || null);
-      setAnimMedia((current) => current || saved.animMedia || null);
-      if (saved.name) setName((current) => current || saved.name);
-      if (saved.nftContract) {
-        setNftContract((current) => current || saved.nftContract);
-      }
-      if (saved.tokenId) setTokenId((current) => current || saved.tokenId);
-
-      // Publish everything we know so the placard paints with the artwork
-      // instead of waiting for the chain fetch.
-      const detail = {};
-      if (saved.name) detail.name = saved.name;
-      if (saved.nftContract) detail.nftContract = saved.nftContract;
-      if (saved.tokenId) detail.tokenId = saved.tokenId;
-      if (Object.keys(detail).length) publishNowPlaying(detail);
-      if (
-        !saved.staticMedia &&
-        saved.animMedia &&
-        isSafeType(saved.animMedia.type)
-      ) {
-        setShowAnim(true);
-      }
-    } catch (_) {
-      /* corrupt cache — ignore, the chain fetch will repopulate it */
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Server snapshot: gives first-time visitors an instant paint too, and is
-  // fresher than localStorage (CDN-cached ~12s). Live chain data still wins.
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const response = await fetch("/api/now-playing");
-        if (!response.ok) return;
-        const snap = await response.json();
-        if (cancelled || liveLoadedRef.current) return;
-        if (!snap || (!snap.staticMedia && !snap.animMedia)) return;
-
-        setStaticMedia(snap.staticMedia || null);
-        setAnimMedia(snap.animMedia || null);
-        setShowAnim(
-          Boolean(
-            !snap.staticMedia &&
-              snap.animMedia &&
-              isSafeType(snap.animMedia.type)
-          )
-        );
-        if (snap.name) setName(snap.name);
-        if (snap.nftContract) setNftContract(snap.nftContract);
-        if (snap.tokenId) setTokenId(snap.tokenId);
-
-        // Push all snapshot facts to the placard at once; the live chain
-        // fetch overwrites them when it lands (e.g. player with its ENS).
-        const detail = {};
-        if (snap.name) detail.name = snap.name;
-        if (snap.nftContract) detail.nftContract = snap.nftContract;
-        if (snap.tokenId) detail.tokenId = snap.tokenId;
-        if (snap.startBlock) detail.startBlock = snap.startBlock;
-        if (snap.player) detail.player = snap.player;
-        if (Object.keys(detail).length) publishNowPlaying(detail);
-      } catch (_) {
-        /* snapshot is best-effort */
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // NOTE: deliberately no contract.on("NFTPlayed") subscription — ethers v5
-  // implements it by polling the RPC every 4 seconds (~1,800 requests/hour
-  // per open tab). Stage changes are detected via the CDN-cached snapshot
-  // poll below instead, which costs no RPC calls at all.
-  useEffect(() => {
-    const contract = new ethers.Contract(
-      contractAddress,
-      JukeBoxTokenABI,
-      getReadProvider()
-    );
-
-    fetchNowPlaying(contract);
-    fetchPlayer(contract);
-
-    // Manual refresh, triggered from the stage toolbar
-    const refresh = () => {
-      fetchNowPlaying(contract);
-      fetchPlayer(contract);
-    };
-    window.addEventListener("jukebox-refresh", refresh);
-
-    return () => {
-      window.removeEventListener("jukebox-refresh", refresh);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Auto-sync: once per block (~12s), ask the server snapshot whether the
-  // stage changed hands. The response comes from the CDN/server cache, so an
-  // idle tab makes zero RPC calls; a full refetch happens only on a change.
-  useEffect(() => {
-    if (!autoRefresh) return;
-
-    const contract = new ethers.Contract(
-      contractAddress,
-      JukeBoxTokenABI,
-      getReadProvider()
-    );
-
-    const intervalId = setInterval(async () => {
-      try {
-        const response = await fetch("/api/now-playing");
-        if (!response.ok) return;
-        const snap = await response.json();
-        if (
-          snap?.startBlock &&
-          startBlockRef.current &&
-          snap.startBlock !== startBlockRef.current
-        ) {
-          await fetchNowPlaying(contract);
-          await fetchPlayer(contract);
-        }
-      } catch (_) {
-        /* transient error — try again next block */
-      }
-    }, 12000);
-
-    return () => clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh]);
-
-  useEffect(() => {
-    // ... your existing code ...
-
-    // Start an interval to increase currentBlock every 12 seconds
-    const intervalId = setInterval(increaseCurrentBlock, 12000);
-
-    // Cleanup function to clear the interval when the component unmounts
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, []);
 
   const active = showAnim && animMedia ? animMedia : staticMedia;
 

@@ -28,12 +28,42 @@ export const rpcRequest = async (rpcUrl, method, params) => {
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     cache: "no-store",
+    // A hanging RPC must fail fast so the fallback list gets its turn
+    signal: AbortSignal.timeout(10_000),
   });
   const json = await response.json();
   if (json.error) {
     throw new Error(json.error.message || "RPC error");
   }
   return json.result;
+};
+
+// Batched JSON-RPC: several calls in a single HTTP round trip.
+// calls: [{ method, params }] — results returned in the same order.
+export const rpcBatchRequest = async (rpcUrl, calls) => {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "https://nftjukebox.app",
+    },
+    body: JSON.stringify(
+      calls.map((call, id) => ({ jsonrpc: "2.0", id, ...call }))
+    ),
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  const json = await response.json();
+  if (!Array.isArray(json)) {
+    throw new Error(json?.error?.message || "Batch not supported");
+  }
+  return calls.map((_, id) => {
+    const entry = json.find((item) => item.id === id);
+    if (!entry || entry.error) {
+      throw new Error(entry?.error?.message || "RPC error");
+    }
+    return entry.result;
+  });
 };
 
 const MAINNET = { name: "homestead", chainId: 1 };
@@ -82,6 +112,12 @@ export const getPlays = () => {
     });
   }
   return playsPromise;
+};
+
+// Drop the memoized list and refetch — used after a stage change.
+export const refreshPlays = () => {
+  playsPromise = null;
+  return getPlays();
 };
 
 // Free public gateways, in order of preference. cloudflare-ipfs.com no
@@ -141,7 +177,10 @@ export const fetchJson = async (uri) => {
   let lastError = null;
   for (const candidate of httpCandidates(uri)) {
     try {
-      const response = await fetch(probeUrl(candidate));
+      // A stalling gateway shouldn't block when alternates exist
+      const response = await fetch(probeUrl(candidate), {
+        signal: AbortSignal.timeout(8_000),
+      });
       if (!response.ok) throw new Error("HTTP " + response.status);
       return await response.json();
     } catch (error) {
@@ -236,7 +275,10 @@ export const resolveMedia = async (uri) => {
 
   for (const candidate of candidates) {
     try {
-      const response = await fetch(probeUrl(candidate), { method: "HEAD" });
+      const response = await fetch(probeUrl(candidate), {
+        method: "HEAD",
+        signal: AbortSignal.timeout(6_000),
+      });
       if (response.ok) {
         chosenUrl = candidate;
         mimeType = (response.headers.get("Content-Type") || "")
