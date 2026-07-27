@@ -9,6 +9,13 @@ import JukeBoxTokenABI from "../data/JukeBoxToken.json"; // Adjust the path as n
 // Chainlink ETH/USD price feed (mainnet), used for the fee estimate in USD
 const ETH_USD_FEED = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
 
+// Two significant digits instead of fixed decimals — small fees must not
+// round down to a misleading "0.0000 ETH".
+const formatEth = (value) =>
+  value >= 0.001 ? value.toFixed(4) : parseFloat(value.toPrecision(2)).toString();
+
+const formatUsd = (value) => (value < 0.01 ? "<$0.01" : `$${value.toFixed(2)}`);
+
 const PlayButton = ({
   triggerLabel = "Show off any NFT and earn $JUKE for as long as it stays up",
 }) => {
@@ -114,11 +121,17 @@ const PlayButton = ({
             feed.latestAnswer().catch(() => null),
           ]);
 
-          const gasPrice = feeData.gasPrice || feeData.maxFeePerGas;
-          if (!gasPrice) throw new Error("No gas price available");
+          // What a wallet actually charges ≈ gas × (base fee + priority
+          // tip). eth_gasPrice alone hugs the base fee and can undershoot
+          // the real cost by an order of magnitude.
+          const effectivePrice =
+            feeData.lastBaseFeePerGas && feeData.maxPriorityFeePerGas
+              ? feeData.lastBaseFeePerGas.add(feeData.maxPriorityFeePerGas)
+              : feeData.maxFeePerGas || feeData.gasPrice;
+          if (!effectivePrice) throw new Error("No gas price available");
 
           const costEth = parseFloat(
-            ethers.utils.formatEther(gas.mul(gasPrice))
+            ethers.utils.formatEther(gas.mul(effectivePrice))
           );
           const usd = ethUsd ? costEth * (Number(ethUsd) / 1e8) : null;
 
@@ -292,9 +305,9 @@ const PlayButton = ({
               <p className="gas-note">
                 {estimating
                   ? "Estimating network fee…"
-                  : `Network fee ≈ ${gasEstimate.eth.toFixed(4)} ETH` +
+                  : `Network fee ≈ ${formatEth(gasEstimate.eth)} ETH` +
                     (gasEstimate.usd != null
-                      ? ` ($${gasEstimate.usd.toFixed(2)})`
+                      ? ` (${formatUsd(gasEstimate.usd)})`
                       : "")}
               </p>
             )}
